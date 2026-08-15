@@ -1,31 +1,37 @@
 """
-状态机 Agent 编排 - 核心流程控制
+状态机 Agent 编排 - Phase 3 增强版
 实现类似 LangGraph 的节点式 Agent 编排
-支持条件分支、工具调用、状态追踪
+支持条件分支、工具调用、状态追踪、混合检索、结果校验
 """
 import time
 import json
 import asyncio
+import logging
 from typing import AsyncGenerator, Dict, List, Optional, Any, Callable
 from datetime import datetime
 
 from app.agent.state import AgentState, AgentNode, IntentType, ToolCall
 from app.agent.intent import EnhancedIntentRecognizer, IntentResult
-from app.agent.tools import get_tool
+from app.agent.tools import get_tool, execute_tool_with_fallback
+from app.agent.retrieval import HybridRetriever, create_default_hybrid_retriever
+from app.agent.validation import ResponseValidator, create_validator
 from app.services.llm_service import LLMService
+
+logger = logging.getLogger(__name__)
 
 
 class AgentGraph:
-    """Agent 状态机 - 核心编排器"""
+    """Agent 状态机 - 核心编排器 (Phase 3)"""
 
     def __init__(self):
         self.llm_service = LLMService()
         self.intent_recognizer = EnhancedIntentRecognizer()
+        self.hybrid_retriever = create_default_hybrid_retriever()
+        self.validator = create_validator()
         self.nodes: Dict[str, Callable] = {}
         self._register_nodes()
 
     def _register_nodes(self):
-        """注册所有节点"""
         self.nodes[AgentNode.START] = self._node_start
         self.nodes[AgentNode.INTENT_RECOGNITION] = self._node_intent_recognition
         self.nodes[AgentNode.CLARIFICATION] = self._node_clarification
@@ -37,30 +43,22 @@ class AgentGraph:
         self.nodes[AgentNode.END] = self._node_end
 
     async def run(self, state: AgentState) -> AgentState:
-        """
-        运行 Agent 状态机
-        Args:
-            state: 初始状态
-        Returns:
-            处理完成的状态
-        """
         start_time = time.time()
         current_node = state.current_node
         visited_nodes = set()
 
-        max_iterations = 10
+        max_iterations = 15
         iteration = 0
+        regeneration_count = 0
 
         while current_node != AgentNode.END and iteration < max_iterations:
             iteration += 1
 
-            # 防止循环
             node_key = f"{current_node}_{state.detected_intent}"
             if node_key in visited_nodes:
                 break
             visited_nodes.add(node_key)
 
-            # 执行当前节点
             if current_node in self.nodes:
                 node_func = self.nodes[current_node]
                 state.current_node = current_node
@@ -69,17 +67,48 @@ class AgentGraph:
                 next_node = await node_func(state)
                 node_duration = int((time.time() - node_start) * 1000)
 
-                # 记录轨迹
                 state.add_trace(
                     node_name=current_node,
                     input_data={"message": state.user_message, "intent": state.detected_intent},
-                    output_data={"next_node": next_node, "reply": state.reply[:100] if state.reply else ""},
+                    output_data={
+                        "next_node": next_node,
+                        "reply": state.reply[:100] if state.reply else "",
+                        "need_regeneration": state.current_node == AgentNode.RESULT_VERIFICATION
+                        and not state.reply,
+                    },
                     duration_ms=node_duration,
                 )
 
+                if (
+                    current_node == AgentNode.RESULT_VERIFICATION
+                    and next_node == AgentNode.RESPONSE_GENERATION
+                    and state.reply
+                ):
+                    validation_result = self.validator.validate(
+                        response=state.reply,
+                        user_query=state.user_message,
+                        intent=state.detected_intent,
+                        tool_results=[tc.result for tc in state.tool_calls],
+                    )
+
+                    state.collected_info["validation"] = validation_result.to_dict()
+
+                    if validation_result.needs_regeneration and regeneration_count < 2:
+                        regeneration_count += 1
+                        logger.info(
+                            f"回答校验不通过 (第{regeneration_count}次)，重新生成"
+                        )
+                        state.reply = ""
+                        continue
+
+                    if not validation_result.passed and regeneration_count >= 2:
+                        state.need_human = True
+                        state.human_reason = "回答校验连续不通过，需人工介入"
+                        logger.warning(f"回答校验失败，转人工: {state.human_reason}")
+                        next_node = AgentNode.HUMAN_HANDOFF
+
                 current_node = next_node
             else:
-                # 未知节点，直接结束
                 break
 
         state.execution_time_ms = int((time.time() - start_time) * 1000)
@@ -88,11 +117,9 @@ class AgentGraph:
         return state
 
     async def _node_start(self, state: AgentState) -> str:
-        """起始节点 -> 意图识别"""
         return AgentNode.INTENT_RECOGNITION
 
     async def _node_intent_recognition(self, state: AgentState) -> str:
-        """意图识别节点"""
         intent_result = self.intent_recognizer.recognize(
             message=state.user_message,
             context=state.messages,
@@ -103,15 +130,12 @@ class AgentGraph:
         state.intent_confidence = intent_result.confidence
         state.needs_clarification = intent_result.needs_clarification
 
-        # 根据置信度决定下一步
         if intent_result.needs_clarification:
             return AgentNode.CLARIFICATION
 
-        # 根据意图类型选择路径
         return self._route_by_intent(state.detected_intent)
 
     def _route_by_intent(self, intent: str) -> str:
-        """根据意图路由到对应节点"""
         intent_routes = {
             IntentType.QUERY_ORDER: AgentNode.TOOL_EXECUTION,
             IntentType.REFUND: AgentNode.TOOL_EXECUTION,
@@ -124,12 +148,10 @@ class AgentGraph:
         return intent_routes.get(intent, AgentNode.RESPONSE_GENERATION)
 
     async def _node_clarification(self, state: AgentState) -> str:
-        """澄清节点 - 当意图不明确时追问"""
         question = self.intent_recognizer.get_clarification_question(state.detected_intent)
         state.reply = question
         state.needs_clarification = True
 
-        # 记录消息
         state.messages.append({
             "role": "assistant",
             "content": question,
@@ -139,59 +161,85 @@ class AgentGraph:
         return AgentNode.RESPONSE_GENERATION
 
     async def _node_rag_retrieval(self, state: AgentState) -> str:
-        """RAG 检索节点 - 从知识库检索答案"""
-        tool = get_tool("search_kb")
-        if tool:
-            result = await tool.execute(query=state.user_message, top_k=3)
-            state.add_tool_call(
-                tool_name="search_kb",
-                arguments={"query": state.user_message, "top_k": 3},
-                result=result,
-                success=result.get("success", False),
+        query = state.user_message
+        top_k = 3
+
+        search_result = self.hybrid_retriever.search(query=query, top_k=top_k)
+
+        state.add_tool_call(
+            tool_name="hybrid_search",
+            arguments={"query": query, "top_k": top_k},
+            result=search_result,
+            success=search_result.get("success", False),
+        )
+
+        state.collected_info["kb_results"] = search_result.get("results", [])
+        state.collected_info["kb_search_meta"] = search_result.get("meta", {})
+
+        if state.collected_info["kb_results"]:
+            best_match = state.collected_info["kb_results"][0]
+            state.collected_info["best_match_score"] = best_match.get(
+                "final_score", best_match.get("hybrid_score", 0)
             )
-            state.collected_info["kb_results"] = result.get("data", [])
+
+        logger.info(
+            f"混合检索完成: {len(search_result.get('results', []))} 条结果, "
+            f"耗时 {search_result.get('execution_time_ms', 0)}ms"
+        )
 
         return AgentNode.RESPONSE_GENERATION
 
     async def _node_tool_execution(self, state: AgentState) -> str:
-        """工具执行节点"""
-        # 从用户消息中提取关键信息
         extracted_info = self._extract_info_from_message(state.user_message)
-        
-        # 合并已收集的信息和提取的信息
+
         for key, value in extracted_info.items():
             if key not in state.collected_info or not state.collected_info[key]:
                 state.collected_info[key] = value
 
-        # 根据意图选择要执行的工具
-        tools_to_execute = self._select_tools_for_intent(state.detected_intent, state.collected_info)
+        tools_to_execute = self._select_tools_for_intent(
+            state.detected_intent, state.collected_info
+        )
 
         for tool_name, tool_args in tools_to_execute:
             tool = get_tool(tool_name)
             if tool:
                 try:
-                    result = await tool.execute(**tool_args)
+                    result = await tool.execute_with_retry(**tool_args)
+
                     state.add_tool_call(
                         tool_name=tool_name,
                         arguments=tool_args,
-                        result=result,
-                        success=result.get("success", False),
-                        error_message=result.get("error"),
+                        result={
+                            "success": result.success,
+                            "data": result.data,
+                            "error": result.error,
+                            "hint": result.hint,
+                            "execution_time_ms": result.execution_time_ms,
+                            "retry_count": result.retry_count,
+                        },
+                        success=result.success,
+                        error_message=result.error,
                     )
 
-                    # 收集信息
-                    if result.get("success"):
-                        data = result.get("data", {})
-                        if isinstance(data, dict):
-                            state.collected_info.update(data)
+                    if result.success and result.data:
+                        if isinstance(result.data, dict):
+                            state.collected_info.update(result.data)
+                        state.collected_info[f"{tool_name}_result"] = result.data
 
-                    # 如果需要人工介入
-                    if not result.get("success") and result.get("hint", "").find("人工") >= 0:
-                        state.need_human = True
-                        state.human_reason = result.get("error", "未知错误")
-                        return AgentNode.HUMAN_HANDOFF
+                    if not result.success:
+                        if result.error and "人工" in result.error:
+                            state.need_human = True
+                            state.human_reason = result.error
+                            return AgentNode.HUMAN_HANDOFF
+
+                        if result.retry_count >= 3:
+                            state.need_human = True
+                            state.human_reason = f"工具 {tool_name} 连续 {result.retry_count} 次失败"
+                            logger.warning(f"工具连续失败，转人工: {state.human_reason}")
+                            return AgentNode.HUMAN_HANDOFF
 
                 except Exception as e:
+                    logger.error(f"工具 {tool_name} 执行异常: {e}")
                     state.add_tool_call(
                         tool_name=tool_name,
                         arguments=tool_args,
@@ -203,15 +251,14 @@ class AgentGraph:
         return AgentNode.RESULT_VERIFICATION
 
     def _extract_info_from_message(self, message: str) -> Dict[str, Any]:
-        """从用户消息中提取关键信息"""
         import re
+
         info = {}
 
-        # 提取订单号 (ORD + 数字)
         order_patterns = [
-            r'ORD\d{8,}',
-            r'订单[：:]\s*(\w+)',
-            r'订单号[：:]\s*(\w+)',
+            r"ORD\d{6,}",
+            r"订单[：:]\s*(\w+)",
+            r"订单号[：:]\s*(\w+)",
         ]
         for pattern in order_patterns:
             match = re.search(pattern, message, re.IGNORECASE)
@@ -220,17 +267,11 @@ class AgentGraph:
                 info["order_id"] = order_id
                 break
 
-        # 提取用户ID (如果是从数据库获取的)
-        # 这里主要依赖 state 中的 user_id
-
-        # 提取投诉内容
         if any(word in message for word in ["投诉", "垃圾", "骗子", "气愤"]):
             info["complaint_content"] = message
 
-        # 提取退款原因
         if any(word in message for word in ["退款", "退货", "退换"]):
             info["reason"] = message
-            # 判断退款类型
             if "换" in message:
                 info["refund_type"] = "exchange"
             else:
@@ -241,21 +282,18 @@ class AgentGraph:
     def _select_tools_for_intent(
         self, intent: str, collected_info: Dict[str, Any]
     ) -> List[tuple]:
-        """根据意图选择工具"""
         tool_plan = []
 
         if intent == IntentType.QUERY_ORDER:
-            # 如果已经有订单号，直接查询
             order_id = collected_info.get("order_id")
             if order_id:
                 tool_plan.append(("query_order", {"order_id": order_id}))
-            # 没有订单号时不添加工具，回复默认提示
 
         elif intent == IntentType.REFUND:
             order_id = collected_info.get("order_id", "")
             reason = collected_info.get("reason", "")
             refund_type = collected_info.get("refund_type", "refund")
-            
+
             if order_id:
                 tool_plan.append((
                     "apply_refund",
@@ -281,107 +319,152 @@ class AgentGraph:
         return tool_plan
 
     async def _node_result_verification(self, state: AgentState) -> str:
-        """结果校验节点"""
-        # 检查最后一个工具调用的结果
         if state.tool_calls:
             last_call = state.tool_calls[-1]
 
             if not last_call.success:
-                # 工具调用失败
-                if len(state.tool_calls) < 3:
-                    # 重试次数不够，给用户提示
+                tool_count = len(state.tool_calls)
+                if tool_count < 3:
                     state.reply = f"抱歉，操作遇到问题：{last_call.error_message or '未知错误'}"
                 else:
-                    # 重试次数过多，转人工
                     state.need_human = True
                     state.human_reason = "工具调用连续失败"
+                    logger.warning(f"工具连续失败 ({tool_count}次)，转人工")
                     return AgentNode.HUMAN_HANDOFF
+
+            if last_call.success and isinstance(last_call.result, dict):
+                execution_time = last_call.result.get("execution_time_ms", 0)
+                retry_count = last_call.result.get("retry_count", 0)
+                if execution_time > 3000:
+                    logger.warning(
+                        f"工具执行耗时过长: {execution_time}ms"
+                    )
+
+                if retry_count > 0:
+                    logger.info(
+                        f"工具执行重试 {retry_count} 次后成功"
+                    )
 
         return AgentNode.RESPONSE_GENERATION
 
     async def _node_response_generation(self, state: AgentState) -> str:
-        """响应生成节点"""
-        # 如果已经有回复（如澄清问题），直接使用
         if state.reply:
             pass
-        # 如果需要人工，给出转接提示
         elif state.need_human:
             state.reply = f"非常抱歉，正在为您转接人工客服。{state.human_reason or ''}"
         else:
-            # 基于收集的信息生成回复
             state.reply = self._generate_response(state)
 
-        # 记录消息
         state.messages.append({
             "role": "assistant",
             "content": state.reply,
             "intent": state.detected_intent,
             "tool_calls": [tc.tool_name for tc in state.tool_calls],
+            "timestamp": datetime.now().isoformat(),
         })
 
         return AgentNode.END
 
     def _generate_response(self, state: AgentState) -> str:
-        """根据状态生成回复"""
         intent = state.detected_intent
         collected = state.collected_info
         tool_results = [tc for tc in state.tool_calls if tc.success]
 
-        # 如果有工具调用结果，基于结果生成回复
         if tool_results:
             last_result = tool_results[-1]
+            result_data = last_result.result if isinstance(last_result.result, dict) else {}
 
             if intent == IntentType.QUERY_ORDER:
-                order_data = last_result.result.get("data", {}) if last_result.result else {}
-                if order_data:
+                order_data = result_data.get("data", {}) if result_data else {}
+                if order_data and isinstance(order_data, dict):
                     shipping = order_data.get("shipping", {})
+                    status_text = order_data.get("status", "未知")
+                    shipping_text = (
+                        f"{shipping.get('carrier', '')} - {shipping.get('tracking_no', '')}"
+                        if shipping
+                        else "暂无物流信息"
+                    )
+                    delivery_status = shipping.get("status", "待发货") if shipping else "待发货"
+                    amount = order_data.get("total_amount", 0)
+
+                    refund_info = ""
+                    if order_data.get("can_refund"):
+                        deadline = order_data.get("refund_deadline", "")
+                        if deadline:
+                            refund_info = f"\n退换货截止日期：{deadline[:10]}"
+
                     return (
-                        f"您的订单 {order_data.get('order_id', '')} 当前状态：{order_data.get('status', '未知')}\n"
-                        f"物流信息：{shipping.get('carrier', '')} - {shipping.get('tracking_no', '')}\n"
-                        f"配送状态：{shipping.get('status', '')}\n"
-                        f"订单金额：¥{order_data.get('total_amount', 0)}"
+                        f"您的订单 {order_data.get('order_id', '')} 当前状态：{status_text}\n"
+                        f"物流信息：{shipping_text}\n"
+                        f"配送状态：{delivery_status}\n"
+                        f"订单金额：¥{amount:.2f}"
+                        f"{refund_info}"
                     )
 
             elif intent == IntentType.REFUND:
-                refund_data = last_result.result.get("data", {}) if last_result.result else {}
-                if refund_data:
+                refund_data = result_data.get("data", {}) if result_data else {}
+                if refund_data and isinstance(refund_data, dict):
                     steps = refund_data.get("next_steps", [])
+                    refund_id = refund_data.get("refund_id", "")[:8]
+                    refund_type_label = refund_data.get("type_label", "退款")
+                    amount = refund_data.get("amount", 0)
+
+                    steps_text = "\n".join(f"• {step}" for step in steps[:3])
+
                     return (
-                        f"退款申请已提交（退款单号：{refund_data.get('refund_id', '')}）\n"
-                        f"接下来的步骤：\n"
-                        + "\n".join(f"• {step}" for step in steps)
+                        f"{refund_type_label}申请已提交（退款单号：{refund_id}...）\n"
+                        f"退款金额：¥{amount:.2f}\n"
+                        f"接下来的步骤：\n{steps_text}"
                     )
 
             elif intent == IntentType.COMPLAINT:
-                ticket_data = last_result.result.get("data", {}) if last_result.result else {}
-                if ticket_data:
+                ticket_data = result_data.get("data", {}) if result_data else {}
+                if ticket_data and isinstance(ticket_data, dict):
+                    ticket_id = ticket_data.get("ticket_id", "")[:8]
+                    sla_deadline = ticket_data.get("sla_deadline", "")[:10]
+                    assignee = ticket_data.get("assignee", "")
+
                     return (
-                        f"您的投诉工单已创建（工单号：{ticket_data.get('ticket_id', '')}）\n"
-                        f"我们将在 {ticket_data.get('sla_deadline', '')} 前处理您的问题，请保持电话畅通。"
+                        f"您的投诉工单已创建（工单号：{ticket_id}...）\n"
+                        f"处理专员：{assignee}\n"
+                        f"我们将在 {sla_deadline} 前处理您的问题，请保持电话畅通。"
                     )
 
-            # 通用工具成功回复
-            if last_result.result and last_result.result.get("success"):
-                data = last_result.result.get('data')
+            if result_data and result_data.get("success"):
+                data = result_data.get("data")
                 if isinstance(data, dict):
-                    return f"操作成功：{data.get('message', '已完成')}"
+                    msg = data.get("message", "已完成")
+                    return f"操作成功：{msg}"
                 elif isinstance(data, list) and data:
                     if isinstance(data[0], dict):
-                        return f"已找到 {len(data)} 条相关信息：{data[0].get('content', '')[:100]}"
+                        title = data[0].get("title", "")
+                        content = data[0].get("content", "")[:150]
+                        category = data[0].get("category", "")
+                        return f"已找到 {len(data)} 条相关信息（分类：{category}）：\n\n【{title}】\n{content}"
                     return f"已找到 {len(data)} 条相关信息"
                 return "操作成功"
 
-        # 如果有 RAG 检索结果
         kb_results = collected.get("kb_results", [])
         if kb_results:
             best_match = kb_results[0] if kb_results else {}
-            return f"根据您的问题，我们找到以下信息：\n\n{best_match.get('content', '')}"
+            title = best_match.get("title", "")
+            content = best_match.get("content", "")
+            category = best_match.get("category", "")
+            score = best_match.get("final_score", best_match.get("hybrid_score", 0))
 
-        # 基于意图的默认回复
+            response_parts = []
+            if title:
+                response_parts.append(f"【{title}】")
+            if content:
+                response_parts.append(content)
+            if category:
+                response_parts.append(f"\n（分类：{category}，相关度：{score:.0%}）")
+
+            return "\n".join(response_parts)
+
         return self._get_default_reply(intent, state.user_message)
 
     def _get_default_reply(self, intent: str, message: str) -> str:
-        """获取默认回复"""
         default_replies = {
             IntentType.QUERY_ORDER: "请提供您的订单号，我可以帮您查询最新的订单状态和物流信息。",
             IntentType.REFUND: "关于退换货问题，请提供订单号和退换货原因，我将为您处理。",
@@ -393,7 +476,6 @@ class AgentGraph:
         return default_replies.get(intent, default_replies[IntentType.GENERAL])
 
     async def _node_human_handoff(self, state: AgentState) -> str:
-        """人工转接节点"""
         tool = get_tool("escalate_to_human")
         if tool:
             result = await tool.execute(
@@ -413,44 +495,4 @@ class AgentGraph:
         return AgentNode.RESPONSE_GENERATION
 
     async def _node_end(self, state: AgentState) -> str:
-        """结束节点"""
         return AgentNode.END
-
-
-# Agent 执行流程图（文档用）:
-#
-#                  ┌─────────────┐
-#                  │    START    │
-#                  └──────┬──────┘
-#                         │
-#                  ┌──────▼──────┐
-#                  │ INTENT_REC  │
-#                  └──────┬──────┘
-#                         │
-#              ┌──────────┼──────────┐
-#              │          │          │
-#       confidence<0.4   不同意图   │
-#              │          │          │
-#       ┌──────▼──┐  ┌───▼────┐  ┌──▼─────┐
-#       │CLARIFY  │  │TOOL_EXE│  │RAG_RETR│
-#       └──────┬──┘  └───┬────┘  └──┬─────┘
-#              │         │          │
-#              │    ┌────▼────┐     │
-#              │    │RESULT_V │     │
-#              │    └────┬────┘     │
-#              │         │          │
-#              │    ┌────▼──────────▼────┐
-#              │    │  RESPONSE_GEN      │
-#              │    └────┬──────────┬────┘
-#              │         │          │
-#              │    need_human   正常流程
-#              │         │          │
-#              │    ┌────▼────┐     │
-#              │    │HUMAN_HD │     │
-#              │    └────┬────┘     │
-#              │         │          │
-#              └─────────┴──────────┘
-#                        │
-#                 ┌──────▼──────┐
-#                 │     END     │
-#                 └─────────────┘
