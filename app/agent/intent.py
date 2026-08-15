@@ -100,7 +100,10 @@ class EnhancedIntentRecognizer:
                 keyword_result.confidence = 0.6
 
         # 判断是否需要澄清
-        keyword_result.needs_clarification = keyword_result.confidence < 0.4
+        keyword_result.needs_clarification = (
+            keyword_result.confidence < 0.4
+            and keyword_result.intent != "general"
+        )
 
         return keyword_result
 

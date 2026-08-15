@@ -594,12 +594,14 @@ class AgentGraph:
         return AgentNode.RESPONSE_GENERATION
 
     async def _node_response_generation(self, state: AgentState) -> str:
-        if state.reply:
-            pass
-        elif state.need_human:
+        if state.need_human and not state.reply:
             state.reply = f"非常抱歉，正在为您转接人工客服。{state.human_reason or ''}"
-        else:
-            state.reply = self._generate_response(state)
+
+        llm_reply = await self._generate_response_with_llm(state)
+        if llm_reply:
+            state.reply = llm_reply
+        elif not state.reply:
+            state.reply = self._get_default_reply(state.detected_intent, state.user_message)
 
         state.messages.append({
             "role": "assistant",
@@ -610,6 +612,111 @@ class AgentGraph:
         })
 
         return AgentNode.END
+
+    async def _generate_response_with_llm(self, state: AgentState) -> str:
+        """使用 LLM 生成响应，失败时返回 None 由调用方降级"""
+        try:
+            prompt = self._build_llm_prompt(state)
+            context_messages = self._build_context_messages(state)
+
+            reply, intent, token_count = await self.llm_service.chat(
+                user_id=state.user_id,
+                session_id=state.session_id,
+                message=prompt,
+                context=context_messages,
+            )
+            state.total_tokens = token_count
+            state.detected_intent = intent
+
+            logger.info(
+                f"LLM 响应生成成功: intent={intent}, tokens={token_count}, "
+                f"session={state.session_id}"
+            )
+            return reply
+        except Exception as e:
+            logger.warning(f"LLM 调用失败: {e}")
+            return None
+
+    def _build_llm_prompt(self, state: AgentState) -> str:
+        """构建发送给 LLM 的富上下文 prompt"""
+        parts = []
+        intent_labels = {
+            "query_order": "订单查询",
+            "refund": "退换货",
+            "complaint": "投诉",
+            "technical": "技术咨询",
+            "promotion": "活动咨询",
+            "human": "转人工",
+            "general": "通用咨询",
+        }
+        intent_label = intent_labels.get(state.detected_intent, state.detected_intent)
+        parts.append(f"【用户意图】{intent_label}")
+        parts.append(f"【用户消息】{state.user_message}")
+
+        successful_tools = [tc for tc in state.tool_calls if tc.success]
+        if successful_tools:
+            parts.append("【工具执行结果】")
+            for tc in successful_tools:
+                result = tc.result
+                if isinstance(result, dict) and result.get("data"):
+                    data = result["data"]
+                    if isinstance(data, dict):
+                        parts.append(f"  - {tc.tool_name}: {json.dumps(data, ensure_ascii=False, indent=2)}")
+                    elif isinstance(data, list) and data:
+                        if isinstance(data[0], dict):
+                            parts.append(f"  - {tc.tool_name}: 找到 {len(data)} 条结果")
+                            for item in data[:3]:
+                                title = item.get("title", "")
+                                content = item.get("content", "")[:200]
+                                if title:
+                                    parts.append(f"    【{title}】{content}")
+                        else:
+                            parts.append(f"  - {tc.tool_name}: {json.dumps(data, ensure_ascii=False)[:500]}")
+                    else:
+                        parts.append(f"  - {tc.tool_name}: {str(data)[:500]}")
+                elif isinstance(result, dict) and result.get("success"):
+                    parts.append(f"  - {tc.tool_name}: 操作成功")
+                else:
+                    parts.append(f"  - {tc.tool_name}: 执行成功")
+
+        failed_tools = [tc for tc in state.tool_calls if not tc.success]
+        if failed_tools:
+            parts.append("【工具执行失败】")
+            for tc in failed_tools:
+                parts.append(f"  - {tc.tool_name}: {tc.error_message or '未知错误'}")
+
+        kb_results = state.collected_info.get("kb_results", [])
+        if kb_results:
+            parts.append("【知识库检索结果】")
+            for i, result in enumerate(kb_results[:3], 1):
+                title = result.get("title", "")
+                content = result.get("content", "")
+                category = result.get("category", "")
+                score = result.get("final_score", result.get("hybrid_score", 0))
+                parts.append(f"  {i}. 【{title}】({category}, 相关度:{score:.0%})")
+                if content:
+                    parts.append(f"     {content[:300]}")
+
+        parts.append("")
+        parts.append("请根据以上信息，用自然、专业、简洁的中文回复用户。回复要点：")
+        parts.append("1. 直接回应用户的问题或需求")
+        parts.append("2. 如果有工具执行结果，清晰告知用户结果")
+        parts.append("3. 如果有知识库内容，基于检索内容给出准确回答")
+        parts.append("4. 保持友好专业的语气，适当引导下一步操作")
+        parts.append("5. 回复控制在 200 字以内")
+
+        return "\n".join(parts)
+
+    def _build_context_messages(self, state: AgentState) -> list:
+        """构建对话历史上下文"""
+        context = []
+        for msg in state.messages[-6:]:
+            if msg.get("role") in ("user", "assistant"):
+                context.append({
+                    "role": msg["role"],
+                    "content": msg.get("content", ""),
+                })
+        return context
 
     def _generate_response(self, state: AgentState) -> str:
         intent = state.detected_intent

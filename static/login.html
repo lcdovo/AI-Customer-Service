@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>智能客服系统 - 登录</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  }
+
+  .login-container {
+    width: 400px;
+    max-width: 90%;
+    background: white;
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    overflow: hidden;
+  }
+
+  .login-header {
+    padding: 40px 30px 30px;
+    text-align: center;
+    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+    color: white;
+  }
+  .login-header .logo-icon { font-size: 48px; margin-bottom: 12px; }
+  .login-header h1 { font-size: 22px; font-weight: 600; margin-bottom: 6px; }
+  .login-header p { font-size: 13px; color: #c7d2fe; }
+
+  .login-body { padding: 30px; }
+
+  .role-section { margin-bottom: 24px; }
+  .role-section-title {
+    font-size: 13px;
+    color: #6b7280;
+    margin-bottom: 12px;
+    font-weight: 500;
+  }
+
+  .role-cards { display: flex; gap: 12px; }
+  .role-card {
+    flex: 1;
+    padding: 20px 16px;
+    border: 2px solid #e5e7eb;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+  }
+  .role-card:hover { border-color: #4f46e5; background: #f0f2ff; }
+  .role-card.selected { border-color: #4f46e5; background: #eef2ff; }
+  .role-card .role-icon { font-size: 32px; margin-bottom: 8px; }
+  .role-card .role-name { font-size: 14px; font-weight: 600; color: #1f2937; margin-bottom: 4px; }
+  .role-card .role-desc { font-size: 11px; color: #9ca3af; }
+
+  .form-group { margin-bottom: 16px; }
+  .form-group label {
+    display: block;
+    font-size: 13px;
+    color: #374151;
+    margin-bottom: 6px;
+    font-weight: 500;
+  }
+  .form-group input {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .form-group input:focus { border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79,70,229,0.1); }
+
+  .admin-fields { display: none; }
+  .admin-fields.show { display: block; }
+
+  .login-btn {
+    width: 100%;
+    padding: 12px;
+    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-top: 8px;
+  }
+  .login-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(79,70,229,0.4); }
+  .login-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+  .demo-accounts {
+    margin-top: 24px;
+    padding: 16px;
+    background: #f9fafb;
+    border-radius: 10px;
+    border: 1px solid #f3f4f6;
+  }
+  .demo-title { font-size: 12px; font-weight: 600; color: #6b7280; margin-bottom: 10px; }
+  .demo-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    font-size: 12px;
+    color: #4b5563;
+  }
+  .demo-item .role-tag {
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 500;
+  }
+  .role-tag.admin { background: #fef3c7; color: #d97706; }
+  .role-tag.user { background: #dbeafe; color: #2563eb; }
+  .demo-fill-btn {
+    padding: 2px 8px;
+    background: #4f46e5;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .demo-fill-btn:hover { background: #3730a3; }
+
+  .login-footer {
+    padding: 16px 30px;
+    background: #f9fafb;
+    text-align: center;
+    font-size: 12px;
+    color: #9ca3af;
+  }
+
+  .error-msg {
+    padding: 10px;
+    background: #fef2f2;
+    color: #dc2626;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-bottom: 12px;
+    display: none;
+  }
+  .error-msg.show { display: block; }
+</style>
+</head>
+<body>
+<div class="login-container">
+  <div class="login-header">
+    <div class="logo-icon">🤖</div>
+    <h1>智能客服系统</h1>
+    <p>企业级智能客服与工单自动处理系统</p>
+  </div>
+
+  <div class="login-body">
+    <div class="error-msg" id="errorMsg"></div>
+
+    <div class="role-section">
+      <div class="role-section-title">请选择登录角色</div>
+      <div class="role-cards">
+        <div class="role-card selected" data-role="user">
+          <div class="role-icon">👤</div>
+          <div class="role-name">用户</div>
+          <div class="role-desc">仅智能对话</div>
+        </div>
+        <div class="role-card" data-role="admin">
+          <div class="role-icon">🛠️</div>
+          <div class="role-name">管理员</div>
+          <div class="role-desc">全功能管理后台</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>用户名</label>
+      <input type="text" id="username" placeholder="请输入用户名">
+    </div>
+
+    <div class="form-group admin-fields" id="adminFields">
+      <label>密码</label>
+      <input type="password" id="password" placeholder="请输入管理员密码">
+    </div>
+
+    <button class="login-btn" id="loginBtn">登 录</button>
+
+    <div class="demo-accounts">
+      <div class="demo-title">💡 演示账号（点击快速填充）</div>
+      <div class="demo-item">
+        <span><span class="role-tag user">用户</span> 用户名: user001</span>
+        <button class="demo-fill-btn" data-role="user" data-user="user001">填充</button>
+      </div>
+      <div class="demo-item">
+        <span><span class="role-tag admin">管理员</span> 用户名: admin</span>
+        <button class="demo-fill-btn" data-role="admin" data-user="admin" data-pwd="admin123">填充</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="login-footer">
+    © 2026 智能客服系统 · 企业级版本
+  </div>
+</div>
+
+<script>
+let selectedRole = 'user';
+
+document.querySelectorAll('.role-card').forEach(card => {
+  card.addEventListener('click', () => {
+    document.querySelectorAll('.role-card').forEach(c => c.classList.remove('selected'));
+    card.classList.add('selected');
+    selectedRole = card.dataset.role;
+
+    const adminFields = document.getElementById('adminFields');
+    if (selectedRole === 'admin') {
+      adminFields.classList.add('show');
+    } else {
+      adminFields.classList.remove('show');
+    }
+  });
+});
+
+document.querySelectorAll('.demo-fill-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const role = btn.dataset.role;
+    document.querySelector(`.role-card[data-role="${role}"]`).click();
+    document.getElementById('username').value = btn.dataset.user;
+    if (role === 'admin' && btn.dataset.pwd) {
+      document.getElementById('password').value = btn.dataset.pwd;
+    }
+  });
+});
+
+document.getElementById('loginBtn').addEventListener('click', () => {
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value.trim();
+  const errorMsg = document.getElementById('errorMsg');
+
+  errorMsg.classList.remove('show');
+
+  if (!username) {
+    errorMsg.textContent = '请输入用户名';
+    errorMsg.classList.add('show');
+    return;
+  }
+
+  if (selectedRole === 'admin' && !password) {
+    errorMsg.textContent = '请输入管理员密码';
+    errorMsg.classList.add('show');
+    return;
+  }
+
+  // 简单验证
+  if (selectedRole === 'admin' && password !== 'admin123') {
+    errorMsg.textContent = '管理员密码错误（演示密码: admin123）';
+    errorMsg.classList.add('show');
+    return;
+  }
+
+  // 保存登录信息
+  localStorage.setItem('cs_user_role', selectedRole);
+  localStorage.setItem('cs_user_name', username);
+  localStorage.setItem('cs_user_id', selectedRole === 'admin' ? '999' : '1');
+
+  // 跳转到对应页面
+  const target = selectedRole === 'admin' ? '/admin.html' : '/user.html';
+  window.location.href = target;
+});
+
+// 回车键登录
+document.querySelectorAll('input').forEach(input => {
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('loginBtn').click();
+  });
+});
+</script>
+</body>
+</html>

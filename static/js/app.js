@@ -8,6 +8,9 @@ const state = {
   wsConnected: false,
   currentStreamMessage: null,
   messageCount: 0,
+  knowledge: {
+    selectedFiles: [],
+  },
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -678,6 +681,7 @@ function switchPage(page) {
   if (page === 'tickets') loadTickets();
   if (page === 'handoff') { loadHandoffRequests(); loadAgents(); }
   if (page === 'analytics') loadAnalytics();
+  if (page === 'knowledge') loadKnowledgeStats();
 }
 
 function autoResize() {
@@ -687,14 +691,33 @@ function autoResize() {
 }
 
 async function init() {
-  const saved = localStorage.getItem('cs_user');
-  if (saved) {
-    try { state.user = { ...state.user, ...JSON.parse(saved) }; } catch (e) {}
+  // 检查登录状态
+  const userRole = localStorage.getItem('cs_user_role');
+  const userName = localStorage.getItem('cs_user_name');
+
+  if (!userRole) {
+    // 未登录，跳转到登录页
+    window.location.href = '/login.html';
+    return;
   }
 
+  if (userRole !== 'admin') {
+    // 非管理员，跳转到用户页
+    window.location.href = '/user.html';
+    return;
+  }
+
+  // 管理员初始化
+  state.user = {
+    id: 1,
+    username: userName || 'admin',
+    nickname: userName || '管理员',
+    level: 'enterprise',
+  };
+
   $('#username').textContent = state.user.username;
-  $('#userLevel').textContent = { normal: '普通用户', vip: 'VIP用户', enterprise: '企业用户' }[state.user.level];
-  $('#userAvatar').textContent = state.user.nickname.charAt(0).toUpperCase();
+  $('#userLevel').textContent = '管理员';
+  $('#userAvatar').textContent = 'A';
 
   initWebSocket();
   loadTools();
@@ -755,17 +778,211 @@ async function init() {
 
   $('#refreshAnalyticsBtn').addEventListener('click', loadAnalytics);
 
-  $('#editUserBtn').addEventListener('click', showUserModal);
-  $('#closeUserModal').addEventListener('click', hideUserModal);
-  $('#cancelUserBtn').addEventListener('click', hideUserModal);
-  $('#saveUserBtn').addEventListener('click', saveUser);
-
   $('#ticketModal').addEventListener('click', (e) => {
     if (e.target.id === 'ticketModal') hideTicketModal();
   });
-  $('#userModal').addEventListener('click', (e) => {
-    if (e.target.id === 'userModal') hideUserModal();
+
+  // 退出登录
+  $('#logoutAdminBtn').addEventListener('click', () => {
+    if (confirm('确定退出登录？')) {
+      localStorage.removeItem('cs_user_role');
+      localStorage.removeItem('cs_user_name');
+      localStorage.removeItem('cs_user_id');
+      window.location.href = '/login.html';
+    }
   });
+
+  // 知识库相关事件
+  $('#uploadFileBtn').addEventListener('click', () => $('#fileInput').click());
+  $('#fileInput').addEventListener('change', (e) => {
+    state.knowledge.selectedFiles = Array.from(e.target.files);
+    updateUploadFilename();
+  });
+
+  const uploadArea = $('#uploadArea');
+  uploadArea.addEventListener('click', () => $('#fileInput').click());
+  uploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadArea.classList.add('dragover');
+  });
+  uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+  uploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadArea.classList.remove('dragover');
+    state.knowledge.selectedFiles = Array.from(e.dataTransfer.files);
+    updateUploadFilename();
+  });
+
+  $('#confirmUploadBtn').addEventListener('click', uploadFiles);
+  $('#addTextBtn').addEventListener('click', addTextDocument);
+  $('#searchBtn').addEventListener('click', searchKnowledge);
+  $('#seedDocsBtn').addEventListener('click', seedDefaultDocuments);
+  $('#refreshKnowledgeBtn').addEventListener('click', loadKnowledgeStats);
+}
+
+// ===== 知识库管理 =====
+
+function updateUploadFilename() {
+  const files = state.knowledge.selectedFiles;
+  const container = $('#uploadFilename');
+  if (!files.length) {
+    container.innerHTML = '';
+    return;
+  }
+  container.innerHTML = `<strong>已选择 ${files.length} 个文件:</strong> ${files.map(f => f.name).join(', ')}`;
+}
+
+async function loadKnowledgeStats() {
+  try {
+    const data = await api('GET', '/api/v1/knowledge/documents');
+    $('#totalDocs').textContent = data.total_documents || 0;
+    $('#totalChunks').textContent = data.total_chunks || 0;
+    $('#vectorBackend').textContent = data.backend === 'milvus' ? 'Milvus' : '内存';
+    $('#vectorCount').textContent = data.vector_store_count || 0;
+  } catch (e) {
+    console.error('加载知识库统计失败:', e);
+  }
+}
+
+async function uploadFiles() {
+  const files = state.knowledge.selectedFiles;
+  if (!files.length) {
+    toast('请先选择文件', 'warning');
+    return;
+  }
+
+  const category = $('#uploadCategory').value;
+  const keywords = $('#uploadKeywords').value;
+
+  if (files.length === 1) {
+    const formData = new FormData();
+    formData.append('file', files[0]);
+    if (files[0].name) formData.append('title', files[0].name.replace(/\.[^.]+$/, ''));
+    formData.append('category', category);
+    formData.append('keywords', keywords);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/knowledge/documents/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      const json = await res.json();
+      if (json.code === 0) {
+        toast(`上传成功: ${json.data.title} (${json.data.chunks_count} 个分块)`, 'success');
+      } else {
+        toast(json.message || '上传失败', 'error');
+      }
+    } catch (e) {
+      toast('上传失败: ' + e.message, 'error');
+    }
+  } else {
+    const formData = new FormData();
+    files.forEach(f => formData.append('files', f));
+    formData.append('category', category);
+    formData.append('keywords', keywords);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/knowledge/documents/batch-upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      const json = await res.json();
+      if (json.code === 0) {
+        toast(json.message, 'success');
+      } else {
+        toast(json.message || '上传失败', 'error');
+      }
+    } catch (e) {
+      toast('批量上传失败: ' + e.message, 'error');
+    }
+  }
+
+  state.knowledge.selectedFiles = [];
+  updateUploadFilename();
+  $('#fileInput').value = '';
+  $('#uploadKeywords').value = '';
+  loadKnowledgeStats();
+}
+
+async function addTextDocument() {
+  const title = $('#textTitle').value.trim();
+  const content = $('#textContent').value.trim();
+  const category = $('#textCategory').value;
+  const keywords = $('#textKeywords').value;
+
+  if (!title || !content) {
+    toast('标题和内容不能为空', 'warning');
+    return;
+  }
+
+  try {
+    const data = await api('POST', '/api/v1/knowledge/documents/text', {
+      title,
+      content,
+      category,
+      keywords: keywords ? keywords.split(',').map(k => k.trim()) : [],
+      source: 'manual',
+    });
+    toast(`添加成功: ${title} (${data.chunks_count} 个分块)`, 'success');
+    $('#textTitle').value = '';
+    $('#textContent').value = '';
+    $('#textKeywords').value = '';
+    loadKnowledgeStats();
+  } catch (e) {
+    toast('添加失败: ' + e.message, 'error');
+  }
+}
+
+async function searchKnowledge() {
+  const query = $('#searchQuery').value.trim();
+  const topK = parseInt($('#searchTopK').value);
+
+  if (!query) {
+    toast('请输入搜索内容', 'warning');
+    return;
+  }
+
+  try {
+    const data = await api('POST', '/api/v1/knowledge/search', {
+      query,
+      top_k: topK,
+      similarity_threshold: 0.3,
+    });
+
+    const results = data.results || [];
+    const container = $('#searchResults');
+
+    if (!results.length) {
+      container.innerHTML = '<div class="empty-state">未找到相关结果</div>';
+      return;
+    }
+
+    container.innerHTML = results.map((r, i) => `
+      <div class="search-result-item">
+        <div class="search-result-title">#${i + 1} ${r.title || '无标题'}</div>
+        <div class="search-result-content">${r.content || ''}</div>
+        <div class="search-result-meta">
+          <span>分类: ${r.category || '-'}</span>
+          <span>来源: ${r.source || '-'}</span>
+          <span class="search-result-score">相似度: ${(r.final_score * 100).toFixed(1)}%</span>
+        </div>
+      </div>
+    `).join('');
+  } catch (e) {
+    toast('搜索失败: ' + e.message, 'error');
+  }
+}
+
+async function seedDefaultDocuments() {
+  if (!confirm('确定导入示例文档？这将添加 3 篇默认文档。')) return;
+
+  try {
+    const data = await api('POST', '/api/v1/knowledge/documents/seed');
+    toast(data.message, 'success');
+    loadKnowledgeStats();
+  } catch (e) {
+    toast('导入失败: ' + e.message, 'error');
+  }
 }
 
 document.addEventListener('DOMContentLoaded', init);

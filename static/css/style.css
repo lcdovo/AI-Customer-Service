@@ -58,6 +58,18 @@ body {
   border-bottom: 1px solid rgba(255,255,255,0.1);
 }
 
+.admin-badge {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 4px 10px;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: white;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+}
+
 .logo {
   display: flex;
   align-items: center;
@@ -173,6 +185,24 @@ body {
 
 .user-edit-btn:hover {
   background: rgba(255,255,255,0.15);
+  color: #fff;
+}
+
+.logout-admin-btn {
+  width: 100%;
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius);
+  color: #fca5a5;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.logout-admin-btn:hover {
+  background: rgba(239, 68, 68, 0.3);
   color: #fff;
 }
 
@@ -1276,3 +1306,314 @@ body {
   .info-panel { display: none; }
   .session-list { width: 180px; }
 }
+
+/* ===== 知识库管理页面 ===== */
+.page-knowledge {
+  display: none;
+  flex-direction: column;
+  height: 100%;
+}
+
+.page-knowledge.active {
+  display: flex;
+}
+
+.knowledge-layout {
+  flex: 1;
+  padding: 20px 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.knowledge-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: all 0.2s;
+}
+
+.stat-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.stat-icon {
+  font-size: 28px;
+  width: 48px;
+  height: 48px;
+  background: var(--bg);
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stat-info {
+  flex: 1;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.knowledge-upload,
+.knowledge-text-add,
+.knowledge-search,
+.knowledge-docs {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+}
+
+.upload-area {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 30px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 12px;
+}
+
+.upload-area:hover {
+  border-color: var(--primary);
+  background: #fafbff;
+}
+
+.upload-area.dragover {
+  border-color: var(--primary);
+  background: #eef2ff;
+}
+
+.upload-icon {
+  font-size: 40px;
+  margin-bottom: 8px;
+}
+
+.upload-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.upload-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.upload-filename {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: var(--bg);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.upload-options,
+.form-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.form-group-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.form-group-inline label {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.form-group-inline input,
+.form-group-inline select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  outline: none;
+  background: var(--bg-card);
+}
+
+.form-group-inline input:focus,
+.form-group-inline select:focus {
+  border-color: var(--primary);
+}
+
+.knowledge-text-add .form-group {
+  margin-bottom: 12px;
+}
+
+.knowledge-text-add .form-group input,
+.knowledge-text-add .form-group textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  outline: none;
+  background: var(--bg-card);
+}
+
+.knowledge-text-add .form-group input:focus,
+.knowledge-text-add .form-group textarea:focus {
+  border-color: var(--primary);
+}
+
+.search-bar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.search-bar input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  outline: none;
+}
+
+.search-bar input:focus {
+  border-color: var(--primary);
+}
+
+.search-bar select {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  outline: none;
+  background: var(--bg-card);
+}
+
+.search-results {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.search-result-item {
+  padding: 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+  transition: all 0.15s;
+}
+
+.search-result-item:hover {
+  background: var(--bg);
+}
+
+.search-result-title {
+  font-weight: 500;
+  color: var(--primary);
+  margin-bottom: 4px;
+}
+
+.search-result-content {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.search-result-meta {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.search-result-score {
+  font-weight: 600;
+  color: var(--success);
+}
+
+.docs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.doc-item {
+  padding: 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: all 0.15s;
+}
+
+.doc-item:hover {
+  background: var(--bg);
+  border-color: var(--primary-light);
+}
+
+.doc-info {
+  flex: 1;
+}
+
+.doc-title {
+  font-weight: 500;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.doc-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  display: flex;
+  gap: 12px;
+}
+
+.doc-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.badge-category {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  background: #eef2ff;
+  color: var(--primary);
+}
+
+.badge-category-policy { background: #fef3c7; color: #d97706; }
+.badge-category-help { background: #dbeafe; color: #2563eb; }
+.badge-category-faq { background: #e0e7ff; color: #4f46e5; }
+.badge-category-product { background: #d1fae5; color: #059669; }
+.badge-category-other { background: #f3f4f6; color: #6b7280; }

@@ -19,6 +19,7 @@ from app.routers.tickets import router as tickets_router
 from app.routers.chat import router as chat_router
 from app.routers.analytics import router as analytics_router
 from app.routers.feedback import router as feedback_router
+from app.routers.knowledge import router as knowledge_router
 
 logging.basicConfig(
     level=logging.INFO if not settings.DEBUG else logging.DEBUG,
@@ -114,6 +115,7 @@ app.include_router(tickets_router)
 app.include_router(chat_router)
 app.include_router(analytics_router)
 app.include_router(feedback_router)
+app.include_router(knowledge_router)
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -121,15 +123,30 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/")
 async def root():
-    index_path = os.path.join(STATIC_DIR, "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(index_path)
+    login_path = os.path.join(STATIC_DIR, "login.html")
+    if os.path.exists(login_path):
+        return FileResponse(login_path)
     return {
         "name": settings.APP_NAME,
         "version": settings.APP_VERSION,
         "status": "running",
         "docs": "/docs",
     }
+
+
+@app.get("/login.html")
+async def login_page():
+    return FileResponse(os.path.join(STATIC_DIR, "login.html"))
+
+
+@app.get("/user.html")
+async def user_page():
+    return FileResponse(os.path.join(STATIC_DIR, "user.html"))
+
+
+@app.get("/admin.html")
+async def admin_page():
+    return FileResponse(os.path.join(STATIC_DIR, "admin.html"))
 
 
 @app.get("/health", response_model=dict)

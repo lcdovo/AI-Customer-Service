@@ -84,3 +84,18 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 async def init_database():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # 创建默认用户（如果不存在）
+    from app.models.models import User
+    async with async_session() as session:
+        from sqlalchemy import select
+        result = await session.execute(select(User).limit(1))
+        existing = result.first()
+        if not existing:
+            default_users = [
+                User(id=1, username='user001', nickname='普通用户', level='normal'),
+                User(id=2, username='user002', nickname='VIP用户', level='vip'),
+                User(id=999, username='admin', nickname='管理员', level='admin'),
+            ]
+            session.add_all(default_users)
+            await session.commit()
