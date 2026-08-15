@@ -1,0 +1,43 @@
+from pydantic_settings import BaseSettings
+from pydantic import Field
+
+
+class Settings(BaseSettings):
+    APP_NAME: str = Field(default="智能客服系统")
+    APP_VERSION: str = Field(default="1.0.0")
+    DEBUG: bool = Field(default=True)
+
+    HOST: str = Field(default="0.0.0.0")
+    PORT: int = Field(default=8000)
+
+    MYSQL_HOST: str = Field(default="localhost")
+    MYSQL_PORT: int = Field(default=3306)
+    MYSQL_USER: str = Field(default="root")
+    MYSQL_PASSWORD: str = Field(default="123456")
+    MYSQL_DATABASE: str = Field(default="customer_service")
+
+    REDIS_HOST: str = Field(default="localhost")
+    REDIS_PORT: int = Field(default=6379)
+    REDIS_PASSWORD: str = Field(default="")
+    REDIS_DB: int = Field(default=0)
+
+    LLM_API_BASE: str = Field(default="http://localhost:8001")
+    LLM_API_KEY: str = Field(default="")
+    LLM_MODEL: str = Field(default="gpt-4o-mini")
+
+    @property
+    def DATABASE_URL(self) -> str:
+        return f"mysql+aiomysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}"
+
+    @property
+    def REDIS_URL(self) -> str:
+        if self.REDIS_PASSWORD:
+            return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+
+
+settings = Settings()
