@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>智能客服工作台</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- 左侧边栏 -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <span class="logo-icon">🤖</span>
+        <span class="logo-text">智能客服工作台</span>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <button class="nav-item active" data-page="chat">
+        <span class="nav-icon">💬</span>
+        <span class="nav-text">智能对话</span>
+      </button>
+      <button class="nav-item" data-page="tickets">
+        <span class="nav-icon">📋</span>
+        <span class="nav-text">工单管理</span>
+      </button>
+      <button class="nav-item" data-page="handoff">
+        <span class="nav-icon">👤</span>
+        <span class="nav-text">转人工</span>
+      </button>
+      <button class="nav-item" data-page="analytics">
+        <span class="nav-icon">📊</span>
+        <span class="nav-text">数据看板</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="user-info">
+        <div class="avatar" id="userAvatar">U</div>
+        <div class="user-detail">
+          <div class="username" id="username">test_user</div>
+          <div class="user-level" id="userLevel">普通用户</div>
+        </div>
+        <button class="user-edit-btn" id="editUserBtn" title="编辑用户">✏️</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- 主内容区 -->
+  <main class="main">
+
+    <!-- 对话页面 -->
+    <section class="page page-chat active">
+      <div class="chat-layout">
+
+        <!-- 会话列表 -->
+        <div class="session-list">
+          <div class="session-list-header">
+            <span>历史会话</span>
+            <button class="new-session-btn" id="newSessionBtn" title="新建会话">
+              <span>+</span>
+            </button>
+          </div>
+          <div class="session-items" id="sessionItems">
+            <div class="session-item active" data-session="current">
+              <div class="session-title" id="currentSessionTitle">当前会话</div>
+              <div class="session-time" id="currentSessionTime">刚刚</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 对话区域 -->
+        <div class="chat-area">
+          <div class="chat-header">
+            <div class="chat-title" id="chatTitle">智能客服</div>
+            <div class="chat-status">
+              <span class="status-dot" id="wsStatus"></span>
+              <span class="status-text" id="wsStatusText">连接中...</span>
+            </div>
+          </div>
+
+          <div class="chat-messages" id="chatMessages">
+            <div class="message system">
+              <div class="message-content">
+                <p>👋 你好！我是智能客服小助手，可以帮你处理：</p>
+                <div class="quick-actions">
+                  <button class="quick-action" data-msg="我的订单到哪了">📦 订单查询</button>
+                  <button class="quick-action" data-msg="我要退货/退款">↩️ 退换货</button>
+                  <button class="quick-action" data-msg="修改收货地址">✏️ 修改信息</button>
+                  <button class="quick-action" data-msg="投诉">📢 投诉建议</button>
+                  <button class="quick-action" data-msg="我要转人工客服">👤 转人工</button>
+                  <button class="quick-action" data-msg="退换货政策是什么">❓ 政策咨询</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="chat-input-area">
+            <div class="input-tools" id="inputTools">
+              <span class="tool-hint">可用工具: </span>
+              <span class="tool-tag">📦 订单查询</span>
+              <span class="tool-tag">📋 工单创建</span>
+              <span class="tool-tag">↩️ 退换货申请</span>
+              <span class="tool-tag">👤 转人工</span>
+              <span class="tool-tag">🔍 知识库</span>
+            </div>
+            <div class="input-wrapper">
+              <textarea
+                id="chatInput"
+                placeholder="请输入您的问题，Enter 发送，Shift+Enter 换行..."
+                rows="1"
+              ></textarea>
+              <div class="input-actions">
+                <button class="action-btn send" id="sendBtn" title="发送">
+                  <span>➤</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 右侧信息面板 -->
+        <div class="info-panel">
+          <div class="panel-section">
+            <div class="panel-title">当前会话信息</div>
+            <div class="info-cards">
+              <div class="info-card">
+                <div class="info-label">会话ID</div>
+                <div class="info-value" id="sessionId">-</div>
+              </div>
+              <div class="info-card">
+                <div class="info-label">当前意图</div>
+                <div class="info-value" id="currentIntent">-</div>
+              </div>
+              <div class="info-card">
+                <div class="info-label">响应时间</div>
+                <div class="info-value" id="responseTime">-</div>
+              </div>
+              <div class="info-card">
+                <div class="info-label">消息数</div>
+                <div class="info-value" id="messageCount">0</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel-section">
+            <div class="panel-title">AI 可用工具</div>
+            <div class="tool-list" id="toolList"></div>
+          </div>
+
+          <div class="panel-section">
+            <div class="panel-title">快捷操作</div>
+            <div class="action-list">
+              <button class="action-item" id="createTicketBtn">
+                <span class="action-icon">📋</span>
+                <span>创建工单</span>
+              </button>
+              <button class="action-item" id="handoffBtn">
+                <span class="action-icon">👤</span>
+                <span>转人工客服</span>
+              </button>
+              <button class="action-item" id="clearChatBtn">
+                <span class="action-icon">🗑️</span>
+                <span>清空对话</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 工单管理页面 -->
+    <section class="page page-tickets">
+      <div class="page-header">
+        <h2>工单管理</h2>
+        <div class="page-actions">
+          <button class="btn-primary" id="newTicketBtn">
+            <span>+</span> 新建工单
+          </button>
+        </div>
+      </div>
+
+      <div class="tickets-layout">
+        <div class="tickets-filters">
+          <div class="filter-group">
+            <span class="filter-label">状态:</span>
+            <select id="ticketStatusFilter">
+              <option value="">全部</option>
+              <option value="pending">待处理</option>
+              <option value="processing">处理中</option>
+              <option value="resolved">已解决</option>
+              <option value="closed">已关闭</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <span class="filter-label">优先级:</span>
+            <select id="ticketPriorityFilter">
+              <option value="">全部</option>
+              <option value="low">低</option>
+              <option value="medium">中</option>
+              <option value="high">高</option>
+              <option value="urgent">紧急</option>
+            </select>
+          </div>
+          <button class="btn-secondary" id="refreshTicketsBtn">🔄 刷新</button>
+        </div>
+
+        <div class="tickets-stats" id="ticketsStats"></div>
+
+        <div class="tickets-table-wrapper">
+          <table class="tickets-table">
+            <thead>
+              <tr>
+                <th>工单ID</th>
+                <th>分类</th>
+                <th>内容</th>
+                <th>优先级</th>
+                <th>状态</th>
+                <th>创建时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="ticketsTableBody">
+              <tr><td colspan="7" class="empty">加载中...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 转人工页面 -->
+    <section class="page page-handoff">
+      <div class="page-header">
+        <h2>转人工管理</h2>
+      </div>
+
+      <div class="handoff-layout">
+        <div class="handoff-section">
+          <div class="section-title">当前转人工请求</div>
+          <div class="handoff-list" id="handoffList">
+            <div class="empty-state">暂无转人工请求</div>
+          </div>
+        </div>
+
+        <div class="handoff-section">
+          <div class="section-title">人工客服列表</div>
+          <div class="agents-list" id="agentsList">
+            <div class="empty-state">加载中...</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 数据看板页面 -->
+    <section class="page page-analytics">
+      <div class="page-header">
+        <h2>数据看板</h2>
+        <div class="page-actions">
+          <button class="btn-secondary" id="refreshAnalyticsBtn">🔄 刷新数据</button>
+        </div>
+      </div>
+
+      <div class="analytics-layout">
+        <div class="analytics-cards" id="analyticsCards"></div>
+
+        <div class="analytics-sections">
+          <div class="analytics-section">
+            <div class="section-title">意图分布</div>
+            <div class="chart-container" id="intentChart">
+              <div class="empty-state">暂无数据</div>
+            </div>
+          </div>
+
+          <div class="analytics-section">
+            <div class="section-title">热门工具</div>
+            <div class="chart-container" id="toolChart">
+              <div class="empty-state">暂无数据</div>
+            </div>
+          </div>
+
+          <div class="analytics-section">
+            <div class="section-title">告警信息</div>
+            <div class="alerts-list" id="alertsList">
+              <div class="empty-state">无告警</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- 工单创建弹窗 -->
+<div class="modal-overlay" id="ticketModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>创建工单</h3>
+      <button class="modal-close" id="closeTicketModal">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>分类</label>
+        <select id="ticketCategory">
+          <option value="complaint">投诉</option>
+          <option value="refund">退款</option>
+          <option value="exchange">换货</option>
+          <option value="shipping">物流</option>
+          <option value="other">其他</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>优先级</label>
+        <select id="ticketPriority">
+          <option value="low">低</option>
+          <option value="medium" selected>中</option>
+          <option value="high">高</option>
+          <option value="urgent">紧急</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>问题描述</label>
+        <textarea id="ticketContent" rows="4" placeholder="请详细描述您遇到的问题..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" id="cancelTicketBtn">取消</button>
+      <button class="btn-primary" id="submitTicketBtn">提交工单</button>
+    </div>
+  </div>
+</div>
+
+<!-- 用户编辑弹窗 -->
+<div class="modal-overlay" id="userModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>用户信息设置</h3>
+      <button class="modal-close" id="closeUserModal">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>用户ID</label>
+        <input type="number" id="userIdInput" value="1">
+      </div>
+      <div class="form-group">
+        <label>用户名</label>
+        <input type="text" id="usernameInput" value="test_user">
+      </div>
+      <div class="form-group">
+        <label>昵称</label>
+        <input type="text" id="nicknameInput" value="测试用户">
+      </div>
+      <div class="form-group">
+        <label>用户等级</label>
+        <select id="userLevelInput">
+          <option value="normal">普通用户</option>
+          <option value="vip">VIP用户</option>
+          <option value="enterprise">企业用户</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" id="cancelUserBtn">取消</button>
+      <button class="btn-primary" id="saveUserBtn">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast 提示 -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>

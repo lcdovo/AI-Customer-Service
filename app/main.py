@@ -1,11 +1,13 @@
 from contextlib import asynccontextmanager
 import logging
+import os
 import time
 import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config.config import settings
 from app.utils.database import init_database, close_redis
@@ -113,9 +115,15 @@ app.include_router(chat_router)
 app.include_router(analytics_router)
 app.include_router(feedback_router)
 
+STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-@app.get("/", response_model=dict)
+
+@app.get("/")
 async def root():
+    index_path = os.path.join(STATIC_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
     return {
         "name": settings.APP_NAME,
         "version": settings.APP_VERSION,

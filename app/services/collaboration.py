@@ -343,6 +343,12 @@ class TicketManager:
     def get_ticket(self, ticket_id: str) -> Optional[Dict[str, Any]]:
         return self._tickets.get(ticket_id)
 
+    def delete_ticket(self, ticket_id: str) -> bool:
+        if ticket_id in self._tickets:
+            del self._tickets[ticket_id]
+            return True
+        return False
+
     def update_ticket_status(
         self,
         ticket_id: str,

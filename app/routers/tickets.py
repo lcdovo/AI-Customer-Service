@@ -145,6 +145,21 @@ async def update_ticket(
     }
 
 
+@router.delete("/tickets/{ticket_id}")
+async def delete_ticket(ticket_id: str):
+    """删除工单"""
+    collaboration_service = get_collaboration_service()
+
+    success = collaboration_service.ticket_manager.delete_ticket(ticket_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="工单不存在")
+
+    return {
+        "code": 0,
+        "message": "删除成功",
+    }
+
+
 @router.post("/handoff")
 async def request_handoff(request: HandoffRequest):
     """请求转人工"""
