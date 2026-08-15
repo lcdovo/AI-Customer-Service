@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     MYSQL_PASSWORD: str = Field(default="123456")
     MYSQL_DATABASE: str = Field(default="customer_service")
 
+    # 如果设置了 DATABASE_URL，则优先使用
+    DATABASE_URL_OVERRIDE: str = Field(default="")
+
     REDIS_HOST: str = Field(default="localhost")
     REDIS_PORT: int = Field(default=6379)
     REDIS_PASSWORD: str = Field(default="")
@@ -27,6 +30,8 @@ class Settings(BaseSettings):
 
     @property
     def DATABASE_URL(self) -> str:
+        if self.DATABASE_URL_OVERRIDE:
+            return self.DATABASE_URL_OVERRIDE
         return f"mysql+aiomysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}"
 
     @property

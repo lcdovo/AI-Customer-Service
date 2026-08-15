@@ -1,21 +1,24 @@
 import time
 import uuid
 from datetime import datetime
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.utils.database import get_db, get_redis
+from app.utils.database import get_db
 from app.models.models import (
-    Session, SessionStatus, Message, MessageRole, User
+    Session, SessionStatus, Message, MessageRole, User, AgentTrace
 )
 from app.schemas.schemas import ChatRequest, ChatResponse, APIResponse
-from app.services.llm_service import LLMService
+from app.agent.graph import AgentGraph
+from app.agent.state import AgentState
+from app.agent.memory import session_manager
 
 router = APIRouter(prefix="/api/v1/chat", tags=["对话管理"])
 
-llm_service = LLMService()
+agent_graph = AgentGraph()
 
 
 @router.post("/send", response_model=ChatResponse)
@@ -42,9 +45,9 @@ async def send_message(
             status=SessionStatus.ACTIVE,
         )
         db.add(session)
+        await db.commit()
 
-    start_time = time.time()
-
+    # 保存用户消息
     user_message = Message(
         session_id=session_id,
         role=MessageRole.USER,
@@ -52,35 +55,66 @@ async def send_message(
     )
     db.add(user_message)
 
-    reply, intent, token_count = await llm_service.chat(
-        user_id=chat_data.user_id,
+    # 使用 Agent 处理
+    agent_state = AgentState(
         session_id=session_id,
-        message=chat_data.message,
+        user_id=chat_data.user_id,
+        user_message=chat_data.message,
     )
 
-    response_time_ms = int((time.time() - start_time) * 1000)
+    # 从会话管理器加载历史上下文
+    saved_state = await session_manager.get_state(session_id)
+    if saved_state:
+        agent_state.messages = saved_state.messages
+        agent_state.collected_info = saved_state.collected_info
 
+    # 运行 Agent 状态机
+    agent_state = await agent_graph.run(agent_state)
+
+    # 保存 Agent 执行轨迹
+    if agent_state.trace:
+        base_trace_id = str(uuid.uuid4())
+        for i, trace_entry in enumerate(agent_state.trace):
+            agent_trace = AgentTrace(
+                trace_id=f"{base_trace_id}_{i}",
+                session_id=session_id,
+                intent=agent_state.detected_intent,
+                node_name=trace_entry.get("node", "unknown"),
+                node_order=i,
+                input_data=trace_entry.get("input"),
+                output_data=trace_entry.get("output"),
+                duration_ms=trace_entry.get("duration_ms", 0),
+                success=True,
+            )
+            db.add(agent_trace)
+
+    # 保存助手回复
+    response_time_ms = agent_state.execution_time_ms
     assistant_message = Message(
         session_id=session_id,
         role=MessageRole.ASSISTANT,
-        content=reply,
-        token_count=token_count,
+        content=agent_state.reply,
+        token_count=agent_state.total_tokens,
         response_time_ms=response_time_ms,
+        tool_calls=[{"name": tc.tool_name, "success": tc.success} for tc in agent_state.tool_calls],
     )
     db.add(assistant_message)
 
     session.message_count += 2
-    session.last_intent = intent
+    session.last_intent = agent_state.detected_intent
     session.updated_at = datetime.utcnow()
 
     await db.commit()
     await db.refresh(assistant_message)
 
+    # 更新会话管理器状态
+    await session_manager.save_state(agent_state)
+
     return ChatResponse(
         message_id=assistant_message.id,
         session_id=session_id,
-        reply=reply,
-        intent=intent,
+        reply=agent_state.reply,
+        intent=agent_state.detected_intent,
         response_time_ms=response_time_ms,
     )
 
@@ -150,3 +184,46 @@ async def get_user_sessions(
             for s in sessions
         ],
     )
+
+
+@router.get("/tools", response_model=APIResponse)
+async def get_available_tools():
+    """获取所有可用工具列表"""
+    from app.agent.tools import get_all_tools
+
+    tools = get_all_tools()
+    return APIResponse(
+        code=0,
+        message="获取成功",
+        data=[
+            {
+                "name": t.name,
+                "description": t.description,
+                "parameters": [
+                    {
+                        "name": p["name"],
+                        "type": p["type"],
+                        "description": p["description"],
+                        "required": p.get("required", True),
+                    }
+                    for p in t.parameters
+                ],
+            }
+            for t in tools
+        ],
+    )
+
+
+@router.get("/intents", response_model=APIResponse)
+async def get_intent_types():
+    """获取支持的意图类型"""
+    intents = [
+        {"code": "query_order", "name": "订单查询", "description": "查询订单状态与物流"},
+        {"code": "refund", "name": "退换货", "description": "申请退换货"},
+        {"code": "complaint", "name": "投诉", "description": "用户投诉处理"},
+        {"code": "technical", "name": "技术咨询", "description": "产品使用与技术问题"},
+        {"code": "promotion", "name": "活动咨询", "description": "优惠活动咨询"},
+        {"code": "human", "name": "转人工", "description": "转接人工客服"},
+        {"code": "general", "name": "通用", "description": "普通咨询"},
+    ]
+    return APIResponse(code=0, message="获取成功", data=intents)

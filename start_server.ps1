@@ -1,0 +1,12 @@
+$env:DATABASE_URL_OVERRIDE = "sqlite+aiosqlite:///./test.db"
+$env:MYSQL_HOST = "localhost"
+$env:MYSQL_PORT = "9999"
+$env:MYSQL_USER = "root"
+$env:MYSQL_PASSWORD = ""
+$env:MYSQL_DATABASE = "sqlite+aiosqlite:///./test.db"
+$env:REDIS_HOST = "localhost"
+$env:REDIS_PORT = "9999"
+$env:REDIS_PASSWORD = ""
+$env:REDIS_DB = "0"
+$env:LLM_API_KEY = "test-key"
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
