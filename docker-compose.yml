@@ -1,6 +1,67 @@
-version: '3.8'
-
 services:
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.5
+    container_name: cs_etcd
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    command: >
+      etcd
+      --listen-client-urls=http://0.0.0.0:2379
+      --advertise-client-urls=http://etcd:2379
+      --data-dir=/etcd
+    ports:
+      - "2380:2379"
+    volumes:
+      - etcd_data:/etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    container_name: cs_minio
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    command: minio server /data
+    ports:
+      - "9002:9000"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  milvus:
+    image: milvusdb/milvus:v2.5.6
+    container_name: cs_milvus
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    ports:
+      - "19531:19530"
+      - "9092:9091"
+    volumes:
+      - milvus_data:/var/lib/milvus
+    depends_on:
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
   mysql:
     image: mysql:8.0
     container_name: cs_mysql
@@ -44,8 +105,14 @@ services:
       - MYSQL_DATABASE=customer_service
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - MILVUS_HOST=milvus
+      - MILVUS_PORT=19530
+      - EMBEDDING_DIM=1024
+      - USE_MILVUS=true
       - DEBUG=false
     depends_on:
+      milvus:
+        condition: service_healthy
       mysql:
         condition: service_healthy
       redis:
@@ -54,5 +121,8 @@ services:
       - ./.env:/app/.env
 
 volumes:
+  etcd_data:
+  minio_data:
+  milvus_data:
   mysql_data:
   redis_data:

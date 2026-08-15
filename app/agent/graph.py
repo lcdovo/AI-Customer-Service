@@ -3,6 +3,7 @@
 实现类似 LangGraph 的节点式 Agent 编排
 支持条件分支、工具调用、状态追踪、混合检索、结果校验
 """
+import os
 import time
 import json
 import asyncio
@@ -26,7 +27,17 @@ class AgentGraph:
     def __init__(self):
         self.llm_service = LLMService()
         self.intent_recognizer = EnhancedIntentRecognizer()
-        self.hybrid_retriever = create_default_hybrid_retriever()
+
+        use_milvus = os.getenv("USE_MILVUS", "false").lower() == "true"
+        milvus_host = os.getenv("MILVUS_HOST", "localhost")
+        milvus_port = int(os.getenv("MILVUS_PORT", "19530"))
+        embedding_dim = int(os.getenv("EMBEDDING_DIM", "1024"))
+        self.hybrid_retriever = create_default_hybrid_retriever(
+            use_milvus=use_milvus,
+            milvus_host=milvus_host,
+            milvus_port=milvus_port,
+            embedding_dim=embedding_dim,
+        )
         self.validator = create_validator()
         self.nodes: Dict[str, Callable] = {}
         self._register_nodes()
@@ -41,6 +52,241 @@ class AgentGraph:
         self.nodes[AgentNode.RESPONSE_GENERATION] = self._node_response_generation
         self.nodes[AgentNode.HUMAN_HANDOFF] = self._node_human_handoff
         self.nodes[AgentNode.END] = self._node_end
+
+    async def run_stream(self, state: AgentState) -> AsyncGenerator[Dict[str, Any], None]:
+        """流式执行 Agent 状态机，逐步产出事件供 WebSocket/SSE 推送"""
+        start_time = time.time()
+        current_node = state.current_node
+        visited_nodes = set()
+
+        max_iterations = 15
+        iteration = 0
+        regeneration_count = 0
+
+        yield {"type": "node_start", "node": current_node, "timestamp": datetime.now().isoformat()}
+
+        while current_node != AgentNode.END and iteration < max_iterations:
+            iteration += 1
+
+            node_key = f"{current_node}_{state.detected_intent}"
+            if node_key in visited_nodes:
+                break
+            visited_nodes.add(node_key)
+
+            if current_node in self.nodes:
+                node_func = self.nodes[current_node]
+                state.current_node = current_node
+
+                node_start = time.time()
+
+                if current_node == AgentNode.INTENT_RECOGNITION:
+                    yield {"type": "node_start", "node": "intent_recognition", "timestamp": datetime.now().isoformat()}
+                    next_node = await node_func(state)
+                    yield {
+                        "type": "intent",
+                        "intent": state.detected_intent,
+                        "confidence": state.intent_confidence,
+                        "needs_clarification": state.needs_clarification,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+
+                elif current_node == AgentNode.RAG_RETRIEVAL:
+                    yield {"type": "node_start", "node": "rag_retrieval", "timestamp": datetime.now().isoformat()}
+                    next_node = await node_func(state)
+                    kb_results = state.collected_info.get("kb_results", [])
+                    yield {
+                        "type": "rag_result",
+                        "results_count": len(kb_results),
+                        "top_score": kb_results[0].get("final_score", 0) if kb_results else 0,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+
+                elif current_node == AgentNode.TOOL_EXECUTION:
+                    extracted_info = self._extract_info_from_message(state.user_message)
+                    for key, value in extracted_info.items():
+                        if key not in state.collected_info or not state.collected_info[key]:
+                            state.collected_info[key] = value
+
+                    tools_to_execute = self._select_tools_for_intent(
+                        state.detected_intent, state.collected_info
+                    )
+
+                    next_node = AgentNode.RESULT_VERIFICATION
+                    for tool_name, tool_args in tools_to_execute:
+                        yield {
+                            "type": "tool_call_start",
+                            "tool": tool_name,
+                            "args": tool_args,
+                            "timestamp": datetime.now().isoformat(),
+                        }
+                        tool = get_tool(tool_name)
+                        if tool:
+                            try:
+                                result = await tool.execute_with_retry(**tool_args)
+                                state.add_tool_call(
+                                    tool_name=tool_name,
+                                    arguments=tool_args,
+                                    result={
+                                        "success": result.success,
+                                        "data": result.data,
+                                        "error": result.error,
+                                        "hint": result.hint,
+                                        "execution_time_ms": result.execution_time_ms,
+                                        "retry_count": result.retry_count,
+                                    },
+                                    success=result.success,
+                                    error_message=result.error,
+                                )
+
+                                if result.success and result.data:
+                                    if isinstance(result.data, dict):
+                                        state.collected_info.update(result.data)
+                                    state.collected_info[f"{tool_name}_result"] = result.data
+
+                                yield {
+                                    "type": "tool_call_complete",
+                                    "tool": tool_name,
+                                    "success": result.success,
+                                    "execution_time_ms": result.execution_time_ms,
+                                    "retry_count": result.retry_count,
+                                    "timestamp": datetime.now().isoformat(),
+                                }
+
+                                if not result.success:
+                                    if result.error and "人工" in result.error:
+                                        state.need_human = True
+                                        state.human_reason = result.error
+                                        next_node = AgentNode.HUMAN_HANDOFF
+                                        yield {"type": "handoff", "reason": state.human_reason, "timestamp": datetime.now().isoformat()}
+                                        break
+
+                                    if result.retry_count >= 3:
+                                        state.need_human = True
+                                        state.human_reason = f"工具 {tool_name} 连续 {result.retry_count} 次失败"
+                                        next_node = AgentNode.HUMAN_HANDOFF
+                                        yield {"type": "handoff", "reason": state.human_reason, "timestamp": datetime.now().isoformat()}
+                                        break
+
+                            except Exception as e:
+                                logger.error(f"工具 {tool_name} 执行异常: {e}")
+                                state.add_tool_call(
+                                    tool_name=tool_name,
+                                    arguments=tool_args,
+                                    result=None,
+                                    success=False,
+                                    error_message=str(e),
+                                )
+                                yield {
+                                    "type": "tool_call_complete",
+                                    "tool": tool_name,
+                                    "success": False,
+                                    "error": str(e),
+                                    "timestamp": datetime.now().isoformat(),
+                                }
+
+                elif current_node == AgentNode.CLARIFICATION:
+                    yield {"type": "node_start", "node": "clarification", "timestamp": datetime.now().isoformat()}
+                    next_node = await node_func(state)
+
+                elif current_node == AgentNode.RESULT_VERIFICATION:
+                    yield {"type": "node_start", "node": "result_verification", "timestamp": datetime.now().isoformat()}
+                    next_node = await node_func(state)
+
+                    if state.tool_calls:
+                        last_call = state.tool_calls[-1]
+                        if not last_call.success:
+                            tool_count = len(state.tool_calls)
+                            if tool_count >= 3:
+                                state.need_human = True
+                                state.human_reason = "工具调用连续失败"
+                                next_node = AgentNode.HUMAN_HANDOFF
+                                yield {"type": "handoff", "reason": state.human_reason, "timestamp": datetime.now().isoformat()}
+
+                    if next_node == AgentNode.RESPONSE_GENERATION and state.reply:
+                        validation_result = self.validator.validate(
+                            response=state.reply,
+                            user_query=state.user_message,
+                            intent=state.detected_intent,
+                            tool_results=[tc.result for tc in state.tool_calls],
+                        )
+                        state.collected_info["validation"] = validation_result.to_dict()
+                        yield {
+                            "type": "validation",
+                            "passed": validation_result.passed,
+                            "overall_score": validation_result.overall_score,
+                            "needs_regeneration": validation_result.needs_regeneration,
+                            "timestamp": datetime.now().isoformat(),
+                        }
+
+                        if validation_result.needs_regeneration and regeneration_count < 2:
+                            regeneration_count += 1
+                            state.reply = ""
+                            yield {"type": "node_start", "node": "result_verification", "regeneration": True, "timestamp": datetime.now().isoformat()}
+                            continue
+
+                        if not validation_result.passed and regeneration_count >= 2:
+                            state.need_human = True
+                            state.human_reason = "回答校验连续不通过，需人工介入"
+                            next_node = AgentNode.HUMAN_HANDOFF
+                            yield {"type": "handoff", "reason": state.human_reason, "timestamp": datetime.now().isoformat()}
+
+                elif current_node == AgentNode.HUMAN_HANDOFF:
+                    yield {"type": "node_start", "node": "human_handoff", "timestamp": datetime.now().isoformat()}
+                    next_node = await node_func(state)
+
+                elif current_node == AgentNode.RESPONSE_GENERATION:
+                    yield {"type": "node_start", "node": "response_generation", "timestamp": datetime.now().isoformat()}
+                    next_node = await node_func(state)
+
+                    full_reply = state.reply
+                    chunk_size = max(1, len(full_reply) // 8)
+                    for i in range(0, len(full_reply), chunk_size):
+                        chunk = full_reply[i:i + chunk_size]
+                        yield {"type": "token", "content": chunk, "index": i, "timestamp": datetime.now().isoformat()}
+                        await asyncio.sleep(0.02)
+
+                else:
+                    next_node = await node_func(state)
+
+                node_duration = int((time.time() - node_start) * 1000)
+
+                state.add_trace(
+                    node_name=current_node,
+                    input_data={"message": state.user_message, "intent": state.detected_intent},
+                    output_data={
+                        "next_node": next_node,
+                        "reply": state.reply[:100] if state.reply else "",
+                    },
+                    duration_ms=node_duration,
+                )
+
+                yield {
+                    "type": "node_complete",
+                    "node": current_node,
+                    "duration_ms": node_duration,
+                    "next_node": next_node,
+                    "timestamp": datetime.now().isoformat(),
+                }
+
+                current_node = next_node
+            else:
+                break
+
+        state.execution_time_ms = int((time.time() - start_time) * 1000)
+        state.response_ready = True
+
+        yield {
+            "type": "done",
+            "reply": state.reply,
+            "intent": state.detected_intent,
+            "execution_time_ms": state.execution_time_ms,
+            "tool_calls": [
+                {"tool": tc.tool_name, "success": tc.success}
+                for tc in state.tool_calls
+            ],
+            "need_human": state.need_human,
+            "timestamp": datetime.now().isoformat(),
+        }
 
     async def run(self, state: AgentState) -> AgentState:
         start_time = time.time()

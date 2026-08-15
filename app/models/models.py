@@ -132,7 +132,7 @@ class AgentTrace(Base):
     __tablename__ = "agent_traces"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    trace_id = Column(String(36), unique=True, nullable=False, index=True)
+    trace_id = Column(String(100), unique=True, nullable=False, index=True)
     session_id = Column(String(36), ForeignKey("sessions.id"), nullable=True, index=True)
     intent = Column(String(50), nullable=True, index=True)
     node_name = Column(String(50), nullable=False)

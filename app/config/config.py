@@ -28,6 +28,30 @@ class Settings(BaseSettings):
     LLM_API_KEY: str = Field(default="")
     LLM_MODEL: str = Field(default="gpt-4o-mini")
 
+    # Milvus 向量数据库
+    MILVUS_HOST: str = Field(default="localhost")
+    MILVUS_PORT: int = Field(default=19530)
+    USE_MILVUS: bool = Field(default=False)
+
+    # Embedding 服务
+    EMBEDDING_API_BASE: str = Field(default="")
+    EMBEDDING_API_KEY: str = Field(default="")
+    EMBEDDING_MODEL: str = Field(default="")
+    EMBEDDING_DIM: int = Field(default=1024)
+
+    # RAG 检索增强生成
+    COLLECTION_NAME: str = Field(default="customer_service_knowledge")
+    RAG_TOP_K: int = Field(default=3)
+    RAG_SIMILARITY_THRESHOLD: float = Field(default=0.3)
+    RAG_BM25_WEIGHT: float = Field(default=0.6)
+    RAG_VECTOR_WEIGHT: float = Field(default=0.4)
+    RAG_USE_RERANKER: bool = Field(default=True)
+
+    # 文档分块配置
+    CHUNK_SIZE: int = Field(default=500)
+    CHUNK_OVERLAP: int = Field(default=50)
+    CHUNK_SPLIT_PATTERN: str = Field(default="sentence")
+
     @property
     def DATABASE_URL(self) -> str:
         if self.DATABASE_URL_OVERRIDE:

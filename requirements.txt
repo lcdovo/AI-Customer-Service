@@ -6,6 +6,7 @@ uvicorn[standard]==0.30.6
 SQLAlchemy==2.0.35
 aiomysql==0.2.0
 PyMySQL==1.1.1
+cryptography>=42.0.0
 
 # Cache
 redis==5.2.0
@@ -19,6 +20,9 @@ python-dotenv==1.0.1
 
 # LLM
 httpx==0.27.2
+
+# Vector Database
+pymilvus==2.5.6
 
 # Utils
 python-dateutil==2.9.0.post0

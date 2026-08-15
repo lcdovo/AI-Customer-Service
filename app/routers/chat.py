@@ -1,9 +1,11 @@
+import json
 import time
 import uuid
+import asyncio
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -15,6 +17,7 @@ from app.schemas.schemas import ChatRequest, ChatResponse, APIResponse
 from app.agent.graph import AgentGraph
 from app.agent.state import AgentState
 from app.agent.memory import session_manager
+from app.utils.tracking import structured_logger, generate_trace_id
 
 router = APIRouter(prefix="/api/v1/chat", tags=["对话管理"])
 
@@ -227,3 +230,189 @@ async def get_intent_types():
         {"code": "general", "name": "通用", "description": "普通咨询"},
     ]
     return APIResponse(code=0, message="获取成功", data=intents)
+
+
+@router.websocket("/stream")
+async def websocket_chat_stream(websocket: WebSocket):
+    """WebSocket 实时对话流式接口"""
+    await websocket.accept()
+    trace_id = generate_trace_id()
+    structured_logger.log_request(
+        trace_id=trace_id,
+        method="WS",
+        path="/api/v1/chat/stream",
+        detail="WebSocket connected",
+    )
+
+    db = None
+    try:
+        while True:
+            raw_data = await websocket.receive_text()
+            try:
+                data = json.loads(raw_data)
+            except json.JSONDecodeError:
+                await websocket.send_json(
+                    {"type": "error", "code": 400, "message": "JSON 格式错误", "timestamp": datetime.now().isoformat()}
+                )
+                continue
+
+            user_id = data.get("user_id")
+            message = data.get("message", "").strip()
+            session_id = data.get("session_id")
+
+            if not user_id:
+                await websocket.send_json(
+                    {"type": "error", "code": 400, "message": "缺少 user_id", "timestamp": datetime.now().isoformat()}
+                )
+                continue
+
+            if not message:
+                await websocket.send_json(
+                    {"type": "error", "code": 400, "message": "消息内容不能为空", "timestamp": datetime.now().isoformat()}
+                )
+                continue
+
+            from app.utils.database import async_session
+            async with async_session() as db:
+                user = await db.get(User, user_id)
+                if not user:
+                    await websocket.send_json(
+                        {"type": "error", "code": 404, "message": "用户不存在", "timestamp": datetime.now().isoformat()}
+                    )
+                    continue
+
+                if session_id:
+                    session = await db.get(Session, session_id)
+                    if not session:
+                        session = Session(id=session_id, user_id=user_id, status=SessionStatus.ACTIVE)
+                        db.add(session)
+                    elif session.status == SessionStatus.CLOSED:
+                        session.status = SessionStatus.ACTIVE
+                        session.closed_at = None
+                else:
+                    session_id = str(uuid.uuid4())
+                    session = Session(id=session_id, user_id=user_id, status=SessionStatus.ACTIVE)
+                    db.add(session)
+
+                user_message = Message(
+                    session_id=session_id,
+                    role=MessageRole.USER,
+                    content=message,
+                )
+                db.add(user_message)
+                await db.commit()
+
+                agent_state = AgentState(
+                    session_id=session_id,
+                    user_id=user_id,
+                    user_message=message,
+                )
+
+                saved_state = await session_manager.get_state(session_id)
+                if saved_state:
+                    agent_state.messages = saved_state.messages
+                    agent_state.collected_info = saved_state.collected_info
+
+                structured_logger.log_agent(
+                    trace_id=trace_id,
+                    node="stream",
+                    intent="stream_start",
+                    session_id=session_id,
+                    detail=f"user_id={user_id}, message={message[:50]}",
+                )
+
+                await websocket.send_json({
+                    "type": "stream_start",
+                    "session_id": session_id,
+                    "trace_id": trace_id,
+                    "timestamp": datetime.now().isoformat(),
+                })
+
+                full_reply = ""
+                async for event in agent_graph.run_stream(agent_state):
+                    if event["type"] == "token":
+                        full_reply += event["content"]
+                    elif event["type"] == "done":
+                        full_reply = event.get("reply", full_reply)
+
+                    await websocket.send_json(event)
+
+                assistant_message = Message(
+                    session_id=session_id,
+                    role=MessageRole.ASSISTANT,
+                    content=agent_state.reply or full_reply,
+                    token_count=agent_state.total_tokens,
+                    response_time_ms=agent_state.execution_time_ms,
+                    tool_calls=[{"name": tc.tool_name, "success": tc.success} for tc in agent_state.tool_calls],
+                )
+                db.add(assistant_message)
+
+                if agent_state.trace:
+                    base_trace_id = str(uuid.uuid4())
+                    for i, trace_entry in enumerate(agent_state.trace):
+                        agent_trace = AgentTrace(
+                            trace_id=f"{base_trace_id}_{i}",
+                            session_id=session_id,
+                            intent=agent_state.detected_intent,
+                            node_name=trace_entry.get("node", "unknown"),
+                            node_order=i,
+                            input_data=trace_entry.get("input"),
+                            output_data=trace_entry.get("output"),
+                            duration_ms=trace_entry.get("duration_ms", 0),
+                            success=True,
+                        )
+                        db.add(agent_trace)
+
+                session.message_count += 2
+                session.last_intent = agent_state.detected_intent
+                session.updated_at = datetime.utcnow()
+                await db.commit()
+                await db.refresh(assistant_message)
+
+                await session_manager.save_state(agent_state)
+
+                await websocket.send_json({
+                    "type": "stream_end",
+                    "message_id": assistant_message.id,
+                    "session_id": session_id,
+                    "timestamp": datetime.now().isoformat(),
+                })
+
+                structured_logger.log_agent(
+                    trace_id=trace_id,
+                    node="stream",
+                    intent="stream_end",
+                    session_id=session_id,
+                    detail=f"intent={agent_state.detected_intent}, time={agent_state.execution_time_ms}ms",
+                )
+
+    except WebSocketDisconnect:
+        structured_logger.log_agent(
+            trace_id=trace_id,
+            node="stream",
+            intent="ws_disconnect",
+            session_id="unknown",
+            detail="Client disconnected",
+        )
+    except Exception as e:
+        structured_logger.log_error(
+            trace_id=trace_id,
+            error_type="ws_error",
+            error_message=str(e),
+            method="WS",
+            path="/api/v1/chat/stream",
+        )
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "code": 500,
+                "message": f"服务器内部错误: {str(e)}",
+                "timestamp": datetime.now().isoformat(),
+            })
+        except Exception:
+            pass
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass

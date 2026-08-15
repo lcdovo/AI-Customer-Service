@@ -4,7 +4,7 @@ Phase 4 API 集成测试
 import requests
 import json
 
-BASE_URL = "http://localhost:8002"
+BASE_URL = "http://localhost:8080"
 
 print("=" * 60)
 print("Phase 4 API 集成测试")

@@ -10,6 +10,8 @@ import logging
 from typing import Dict, List, Optional, Tuple, Any
 from collections import Counter
 
+from app.config.config import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -96,43 +98,120 @@ class BM25Retriever:
 
 
 class VectorRetriever:
-    """向量检索器（基于关键词嵌入的简化版）"""
+    """
+    向量检索器
+    优先使用 Milvus 向量数据库，不可用时降级到内存模拟检索
+    """
 
-    def __init__(self):
+    def __init__(self, use_milvus: bool = None, milvus_host: str = None,
+                 milvus_port: int = None, embedding_dim: int = None):
         self.documents: List[Dict[str, Any]] = []
-        self.doc_vectors: List[Dict[str, float]] = []
-        self.vocab: Dict[str, int] = {}
+        self.doc_vectors: List[List[float]] = []
+        self._use_milvus = use_milvus if use_milvus is not None else settings.USE_MILVUS
+        self._milvus_client = None
+        self._embedding_dim = embedding_dim or settings.EMBEDDING_DIM
+        self._backend = "memory"
+
+        if self._use_milvus:
+            self._init_milvus(milvus_host or settings.MILVUS_HOST,
+                              milvus_port or settings.MILVUS_PORT,
+                              self._embedding_dim)
+
+    def _init_milvus(self, host: str, port: int, dim: int):
+        try:
+            from app.utils.milvus_client import get_milvus_client
+            self._milvus_client = get_milvus_client(host=host, port=port, dim=dim)
+            if self._milvus_client.connect():
+                self._backend = "milvus"
+                logger.info(f"VectorRetriever using Milvus ({host}:{port})")
+            else:
+                logger.warning("Milvus connection failed, falling back to memory")
+                self._backend = "memory"
+                self._milvus_client = None
+        except Exception as e:
+            logger.warning(f"Milvus init error: {e}, using memory fallback")
+            self._backend = "memory"
+            self._milvus_client = None
+
+    @property
+    def backend(self) -> str:
+        return self._backend
 
     def add_documents(self, documents: List[Dict[str, Any]]):
-        for doc in documents:
-            content = f"{doc.get('title', '')} {doc.get('content', '')} {doc.get('keywords', '')}"
-            vector = self._text_to_vector(content)
-            self.documents.append(doc)
-            self.doc_vectors.append(vector)
+        if self._backend == "milvus" and self._milvus_client:
+            self._index_to_milvus(documents)
+        else:
+            self._index_to_memory(documents)
 
-    def _text_to_vector(self, text: str) -> Dict[str, float]:
+        self.documents.extend(documents)
+
+    def _index_to_memory(self, documents: List[Dict[str, Any]]):
+        try:
+            from app.services.embedding_service import get_embedding_service
+            embedding_svc = get_embedding_service(dim=self._embedding_dim)
+            for doc in documents:
+                content = f"{doc.get('title', '')} {doc.get('content', '')} {doc.get('keywords', '')}"
+                vector = embedding_svc.encode(content)
+                self.doc_vectors.append(vector)
+        except Exception:
+            for doc in documents:
+                content = f"{doc.get('title', '')} {doc.get('content', '')} {doc.get('keywords', '')}"
+                vector = self._text_to_vector(content)
+                self.doc_vectors.append(vector)
+
+    def _index_to_milvus(self, documents: List[Dict[str, Any]]):
+        try:
+            from app.services.embedding_service import get_embedding_service
+            embedding_svc = get_embedding_service(dim=self._embedding_dim)
+
+            to_insert = []
+            vectors = []
+            for i, doc in enumerate(documents):
+                content = f"{doc.get('title', '')} {doc.get('content', '')} {doc.get('keywords', '')}"
+                vector = embedding_svc.encode(content)
+                doc_copy = dict(doc)
+                if "id" not in doc_copy:
+                    doc_copy["id"] = f"doc_{int(time.time())}_{i}"
+                to_insert.append(doc_copy)
+                vectors.append(vector)
+
+            self._milvus_client.insert(to_insert, vectors)
+            logger.info(f"Indexed {len(to_insert)} documents to Milvus")
+
+        except Exception as e:
+            logger.error(f"Milvus indexing error: {e}, falling back to memory")
+            self._backend = "memory"
+            self._index_to_memory(documents)
+
+    def _text_to_vector(self, text: str) -> List[float]:
         text = text.lower()
         words = re.findall(r'[\w]+', text)
         chinese = re.findall(r'[\u4e00-\u9fff]+', text)
 
         terms = words + chinese
-        vector = {}
         term_freq = Counter(terms)
         total = len(terms) if terms else 1
 
+        vector = [0.0] * self._embedding_dim
         for term, count in term_freq.items():
-            if term not in self.vocab:
-                self.vocab[term] = len(self.vocab)
-            vector[term] = count / total
+            hash_bytes = __import__('hashlib').sha256(term.encode('utf-8')).digest()
+            for i in range(min(32, self._embedding_dim)):
+                vector[i] += (hash_bytes[i] / 255.0) * (count / total)
+
+        norm = math.sqrt(sum(x * x for x in vector))
+        if norm > 1e-8:
+            vector = [x / norm for x in vector]
 
         return vector
 
-    def _cosine_similarity(self, vec1: Dict[str, float], vec2: Dict[str, float]) -> float:
-        common_keys = set(vec1.keys()) & set(vec2.keys())
+    def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
+        min_len = min(len(vec1), len(vec2))
+        vec1 = vec1[:min_len]
+        vec2 = vec2[:min_len]
 
-        dot_product = sum(vec1[k] * vec2[k] for k in common_keys)
-        magnitude1 = math.sqrt(sum(v ** 2 for v in vec1.values()))
-        magnitude2 = math.sqrt(sum(v ** 2 for v in vec2.values()))
+        dot_product = sum(a * b for a, b in zip(vec1, vec2))
+        magnitude1 = math.sqrt(sum(a * a for a in vec1))
+        magnitude2 = math.sqrt(sum(b * b for b in vec2))
 
         if magnitude1 == 0 or magnitude2 == 0:
             return 0.0
@@ -140,12 +219,51 @@ class VectorRetriever:
         return dot_product / (magnitude1 * magnitude2)
 
     def search(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+        if self._backend == "milvus" and self._milvus_client:
+            return self._search_milvus(query, top_k)
+        return self._search_memory(query, top_k)
+
+    def _search_milvus(self, query: str, top_k: int) -> List[Dict[str, Any]]:
+        try:
+            from app.services.embedding_service import get_embedding_service
+            embedding_svc = get_embedding_service(dim=self._embedding_dim)
+            query_vector = embedding_svc.encode(query)
+
+            results = self._milvus_client.search(
+                query_embedding=query_vector,
+                top_k=top_k,
+                score_threshold=settings.RAG_SIMILARITY_THRESHOLD,
+            )
+
+            return [
+                {
+                    "id": r.get("id", ""),
+                    "title": r.get("title", ""),
+                    "content": r.get("content", ""),
+                    "category": r.get("category", ""),
+                    "keywords": r.get("keywords", ""),
+                    "source": r.get("source", ""),
+                    "vector_score": r.get("score", 0),
+                }
+                for r in results
+            ]
+
+        except Exception as e:
+            logger.error(f"Milvus search error: {e}, falling back to memory")
+            return self._search_memory(query, top_k)
+
+    def _search_memory(self, query: str, top_k: int) -> List[Dict[str, Any]]:
         if not self.documents:
             return []
 
-        query_vector = self._text_to_vector(query)
-        scores = []
+        try:
+            from app.services.embedding_service import get_embedding_service
+            embedding_svc = get_embedding_service(dim=self._embedding_dim)
+            query_vector = embedding_svc.encode(query)
+        except Exception:
+            query_vector = self._text_to_vector(query)
 
+        scores = []
         for idx, doc_vector in enumerate(self.doc_vectors):
             similarity = self._cosine_similarity(query_vector, doc_vector)
             if similarity > 0:
@@ -164,6 +282,12 @@ class VectorRetriever:
             })
 
         return results
+
+    def health_check(self) -> Dict[str, Any]:
+        if self._backend == "milvus" and self._milvus_client:
+            healthy, msg = self._milvus_client.health_check()
+            return {"backend": "milvus", "healthy": healthy, "message": msg}
+        return {"backend": "memory", "healthy": True, "message": "Using memory fallback"}
 
 
 class Reranker:
@@ -221,16 +345,25 @@ class HybridRetriever:
 
     def __init__(
         self,
-        bm25_weight: float = 0.5,
-        vector_weight: float = 0.5,
-        use_reranker: bool = True,
+        bm25_weight: float = None,
+        vector_weight: float = None,
+        use_reranker: bool = None,
+        use_milvus: bool = None,
+        milvus_host: str = None,
+        milvus_port: int = None,
+        embedding_dim: int = None,
     ):
         self.bm25 = BM25Retriever()
-        self.vector = VectorRetriever()
+        self.vector = VectorRetriever(
+            use_milvus=use_milvus,
+            milvus_host=milvus_host,
+            milvus_port=milvus_port,
+            embedding_dim=embedding_dim,
+        )
         self.reranker = Reranker()
-        self.bm25_weight = bm25_weight
-        self.vector_weight = vector_weight
-        self.use_reranker = use_reranker
+        self.bm25_weight = bm25_weight or settings.RAG_BM25_WEIGHT
+        self.vector_weight = vector_weight or settings.RAG_VECTOR_WEIGHT
+        self.use_reranker = use_reranker if use_reranker is not None else settings.RAG_USE_RERANKER
         self.documents: List[Dict[str, Any]] = []
 
     def index_documents(self, documents: List[Dict[str, Any]]):
@@ -342,8 +475,21 @@ class HybridRetriever:
         return filtered
 
 
-def create_default_hybrid_retriever() -> HybridRetriever:
-    retriever = HybridRetriever(bm25_weight=0.6, vector_weight=0.4, use_reranker=True)
+def create_default_hybrid_retriever(
+    use_milvus: bool = None,
+    milvus_host: str = None,
+    milvus_port: int = None,
+    embedding_dim: int = None,
+) -> HybridRetriever:
+    retriever = HybridRetriever(
+        bm25_weight=settings.RAG_BM25_WEIGHT,
+        vector_weight=settings.RAG_VECTOR_WEIGHT,
+        use_reranker=settings.RAG_USE_RERANKER,
+        use_milvus=use_milvus,
+        milvus_host=milvus_host,
+        milvus_port=milvus_port,
+        embedding_dim=embedding_dim,
+    )
 
     default_documents = [
         {
