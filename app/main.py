@@ -1,17 +1,22 @@
 from contextlib import asynccontextmanager
 import logging
+import time
+import uuid
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config.config import settings
 from app.utils.database import init_database, close_redis
 from app.services.llm_service import LLMService
+from app.utils.tracking import get_tracer, structured_logger, generate_trace_id
 from app.routers.users import router as users_router
 from app.routers.sessions import router as sessions_router
 from app.routers.tickets import router as tickets_router
 from app.routers.chat import router as chat_router
+from app.routers.analytics import router as analytics_router
+from app.routers.feedback import router as feedback_router
 
 logging.basicConfig(
     level=logging.INFO if not settings.DEBUG else logging.DEBUG,
@@ -57,10 +62,56 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def tracing_middleware(request: Request, call_next):
+    """全链路追踪中间件"""
+    trace_id = request.headers.get("X-Trace-Id", generate_trace_id())
+    request.state.trace_id = trace_id
+    request.state.start_time = time.time()
+
+    try:
+        response = await call_next(request)
+        duration_ms = int((time.time() - request.state.start_time) * 1000)
+
+        response.headers["X-Trace-Id"] = trace_id
+        response.headers["X-Response-Time"] = f"{duration_ms}ms"
+
+        structured_logger.log_response(
+            trace_id=trace_id,
+            status_code=response.status_code,
+            duration_ms=duration_ms,
+            method=request.method,
+            path=request.url.path,
+        )
+
+        tracer = get_tracer()
+        if response.status_code < 400:
+            tracer._metrics.record_response(duration_ms, True)
+        else:
+            tracer._metrics.record_response(duration_ms, False)
+            tracer._metrics.record_error("http_error", f"Status: {response.status_code}")
+
+        return response
+    except Exception as exc:
+        duration_ms = int((time.time() - request.state.start_time) * 1000)
+        structured_logger.log_error(
+            trace_id=trace_id,
+            error_type="internal_error",
+            error_message=str(exc),
+            method=request.method,
+            path=request.url.path,
+            duration_ms=duration_ms,
+        )
+        raise
+
+
 app.include_router(users_router)
 app.include_router(sessions_router)
 app.include_router(tickets_router)
 app.include_router(chat_router)
+app.include_router(analytics_router)
+app.include_router(feedback_router)
 
 
 @app.get("/", response_model=dict)

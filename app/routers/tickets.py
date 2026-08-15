@@ -1,175 +1,267 @@
+"""
+工单管理与人机协同 API - Phase 4 实现
+"""
+import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.utils.database import get_db
-from app.models.models import Ticket, TicketStatus, TicketPriority, User
-from app.schemas.schemas import TicketCreate, TicketResponse, TicketUpdate, APIResponse
+from app.models.models import Ticket, TicketStatus, TicketPriority
+from app.services.collaboration import get_collaboration_service
+from app.utils.tracking import get_tracer
 
-router = APIRouter(prefix="/api/v1/tickets", tags=["工单管理"])
-
-SLA_HOURS = {
-    TicketPriority.LOW: 48,
-    TicketPriority.MEDIUM: 24,
-    TicketPriority.HIGH: 12,
-    TicketPriority.URGENT: 4,
-}
+router = APIRouter(prefix="/api/v1", tags=["工单管理"])
 
 
-@router.post("/", response_model=APIResponse)
+class TicketCreateRequest(BaseModel):
+    user_id: int
+    category: str
+    content: str
+    priority: str = "medium"
+    session_id: Optional[str] = None
+
+
+class TicketUpdateRequest(BaseModel):
+    status: Optional[str] = None
+    assigned_to: Optional[str] = None
+    resolution: Optional[str] = None
+    priority: Optional[str] = None
+
+
+class HandoffRequest(BaseModel):
+    user_id: int
+    session_id: str
+    reason: str
+    priority: str = "normal"
+    context: Optional[dict] = None
+
+
+@router.post("/tickets")
 async def create_ticket(
-    ticket_data: TicketCreate,
+    request: TicketCreateRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    user = await db.get(User, ticket_data.user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="用户不存在")
+    """创建工单"""
+    collaboration_service = get_collaboration_service()
 
-    ticket_id = str(uuid.uuid4())
-    priority = TicketPriority(ticket_data.priority)
-    sla_hours = SLA_HOURS.get(priority, 24)
-
-    ticket = Ticket(
-        id=ticket_id,
-        user_id=ticket_data.user_id,
-        category=ticket_data.category,
-        status=TicketStatus.PENDING,
-        priority=priority,
-        content=ticket_data.content,
-        sla_deadline=datetime.utcnow() + timedelta(hours=sla_hours),
-    )
-    db.add(ticket)
-    await db.commit()
-    await db.refresh(ticket)
-
-    return APIResponse(
-        code=0,
-        message="工单创建成功",
-        data={
-            "id": ticket.id,
-            "user_id": ticket.user_id,
-            "category": ticket.category,
-            "status": ticket.status.value,
-            "priority": ticket.priority.value,
-            "sla_deadline": ticket.sla_deadline.isoformat() if ticket.sla_deadline else None,
-        },
+    ticket = collaboration_service.ticket_manager.create_ticket(
+        user_id=request.user_id,
+        category=request.category,
+        content=request.content,
+        priority=request.priority,
+        session_id=request.session_id,
     )
 
+    return {
+        "code": 0,
+        "message": "创建成功",
+        "data": ticket,
+    }
 
-@router.get("/", response_model=APIResponse)
+
+@router.get("/tickets")
 async def list_tickets(
-    user_id: Optional[int] = None,
-    status: Optional[str] = None,
-    priority: Optional[str] = None,
-    category: Optional[str] = None,
-    page: int = 1,
-    page_size: int = 20,
-    db: AsyncSession = Depends(get_db),
+    status: Optional[str] = Query(default=None, description="工单状态"),
+    priority: Optional[str] = Query(default=None, description="优先级"),
+    category: Optional[str] = Query(default=None, description="分类"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
 ):
-    query = select(Ticket)
-    if user_id:
-        query = query.where(Ticket.user_id == user_id)
-    if status:
-        query = query.where(Ticket.status == TicketStatus(status))
-    if priority:
-        query = query.where(Ticket.priority == TicketPriority(priority))
-    if category:
-        query = query.where(Ticket.category == category)
+    """获取工单列表"""
+    collaboration_service = get_collaboration_service()
 
-    query = query.order_by(Ticket.created_at.desc())
-    query = query.offset((page - 1) * page_size).limit(page_size)
-    result = await db.execute(query)
-    tickets = result.scalars().all()
-
-    return APIResponse(
-        code=0,
-        message="获取成功",
-        data=[
-            {
-                "id": t.id,
-                "user_id": t.user_id,
-                "category": t.category,
-                "status": t.status.value,
-                "priority": t.priority.value,
-                "content": t.content,
-                "assigned_to": t.assigned_to,
-                "sla_deadline": t.sla_deadline.isoformat() if t.sla_deadline else None,
-                "created_at": t.created_at.isoformat() if t.created_at else None,
-                "resolved_at": t.resolved_at.isoformat() if t.resolved_at else None,
-            }
-            for t in tickets
-        ],
+    result = collaboration_service.ticket_manager.list_tickets(
+        status=status,
+        priority=priority,
+        category=category,
+        page=page,
+        page_size=page_size,
     )
 
+    return {
+        "code": 0,
+        "message": "获取成功",
+        "data": result,
+    }
 
-@router.get("/{ticket_id}", response_model=APIResponse)
-async def get_ticket(ticket_id: str, db: AsyncSession = Depends(get_db)):
-    ticket = await db.get(Ticket, ticket_id)
+
+@router.get("/tickets/stats")
+async def get_ticket_stats():
+    """获取工单统计"""
+    collaboration_service = get_collaboration_service()
+    stats = collaboration_service.ticket_manager.get_ticket_stats()
+
+    return {
+        "code": 0,
+        "message": "获取成功",
+        "data": stats,
+    }
+
+
+@router.get("/tickets/{ticket_id}")
+async def get_ticket(ticket_id: str):
+    """获取工单详情"""
+    collaboration_service = get_collaboration_service()
+    ticket = collaboration_service.ticket_manager.get_ticket(ticket_id)
+
     if not ticket:
         raise HTTPException(status_code=404, detail="工单不存在")
 
-    return APIResponse(
-        code=0,
-        message="获取成功",
-        data={
-            "id": ticket.id,
-            "user_id": ticket.user_id,
-            "category": ticket.category,
-            "status": ticket.status.value,
-            "priority": ticket.priority.value,
-            "content": ticket.content,
-            "assigned_to": ticket.assigned_to,
-            "sla_deadline": ticket.sla_deadline.isoformat() if ticket.sla_deadline else None,
-            "created_at": ticket.created_at.isoformat() if ticket.created_at else None,
-            "resolved_at": ticket.resolved_at.isoformat() if ticket.resolved_at else None,
-        },
-    )
+    return {
+        "code": 0,
+        "message": "获取成功",
+        "data": ticket,
+    }
 
 
-@router.put("/{ticket_id}", response_model=APIResponse)
+@router.put("/tickets/{ticket_id}")
 async def update_ticket(
     ticket_id: str,
-    ticket_data: TicketUpdate,
-    db: AsyncSession = Depends(get_db),
+    request: TicketUpdateRequest,
 ):
-    ticket = await db.get(Ticket, ticket_id)
+    """更新工单"""
+    collaboration_service = get_collaboration_service()
+
+    ticket = collaboration_service.ticket_manager.update_ticket_status(
+        ticket_id=ticket_id,
+        status=request.status or "",
+        assigned_to=request.assigned_to,
+        resolution=request.resolution,
+    )
+
     if not ticket:
         raise HTTPException(status_code=404, detail="工单不存在")
 
-    update_data = ticket_data.model_dump(exclude_unset=True)
-    for key, value in update_data.items():
-        if hasattr(ticket, key) and value is not None:
-            if key == "status":
-                value = TicketStatus(value)
-                if value == TicketStatus.RESOLVED or value == TicketStatus.CLOSED:
-                    ticket.resolved_at = datetime.utcnow()
-            elif key == "priority":
-                value = TicketPriority(value)
-            setattr(ticket, key, value)
-
-    ticket.updated_at = datetime.utcnow()
-    await db.commit()
-
-    return APIResponse(code=0, message="更新成功", data={"id": ticket_id})
+    return {
+        "code": 0,
+        "message": "更新成功",
+        "data": ticket,
+    }
 
 
-@router.post("/{ticket_id}/assign", response_model=APIResponse)
-async def assign_ticket(
-    ticket_id: str,
-    assignee: str,
-    db: AsyncSession = Depends(get_db),
+@router.post("/handoff")
+async def request_handoff(request: HandoffRequest):
+    """请求转人工"""
+    collaboration_service = get_collaboration_service()
+
+    result = collaboration_service.execute_handoff(
+        user_id=request.user_id,
+        session_id=request.session_id,
+        reason=request.reason,
+        priority=request.priority,
+        context=request.context,
+    )
+
+    return {
+        "code": 0,
+        "message": "转人工请求已创建",
+        "data": result,
+    }
+
+
+@router.get("/handoff/requests")
+async def list_handoff_requests(
+    status: Optional[str] = Query(default=None),
+    priority: Optional[str] = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
 ):
-    ticket = await db.get(Ticket, ticket_id)
-    if not ticket:
-        raise HTTPException(status_code=404, detail="工单不存在")
+    """获取转人工请求列表"""
+    collaboration_service = get_collaboration_service()
+    requests = collaboration_service.human_agent_service.list_handoff_requests(
+        status=status,
+        priority=priority,
+        limit=limit,
+    )
 
-    ticket.assigned_to = assignee
-    ticket.status = TicketStatus.PROCESSING
-    ticket.updated_at = datetime.utcnow()
-    await db.commit()
+    return {
+        "code": 0,
+        "message": "获取成功",
+        "data": {
+            "total": len(requests),
+            "requests": requests,
+        },
+    }
 
-    return APIResponse(code=0, message="分配成功", data={"id": ticket_id, "assigned_to": assignee})
+
+@router.post("/handoff/{request_id}/assign")
+async def assign_handoff(
+    request_id: str,
+    agent_id: str = Query(..., description="客服ID"),
+):
+    """分配人工客服"""
+    collaboration_service = get_collaboration_service()
+    success = collaboration_service.human_agent_service.assign_handoff_request(
+        request_id=request_id,
+        agent_id=agent_id,
+    )
+
+    if not success:
+        raise HTTPException(status_code=400, detail="分配失败，请检查客服ID或负载情况")
+
+    return {
+        "code": 0,
+        "message": "分配成功",
+        "data": {"request_id": request_id, "agent_id": agent_id},
+    }
+
+
+@router.post("/handoff/{request_id}/resolve")
+async def resolve_handoff(
+    request_id: str,
+    resolution: str = Query(..., description="处理结果"),
+    agent_id: Optional[str] = Query(default=None, description="客服ID"),
+):
+    """解决转人工请求"""
+    collaboration_service = get_collaboration_service()
+    success = collaboration_service.human_agent_service.resolve_handoff_request(
+        request_id=request_id,
+        resolution=resolution,
+        agent_id=agent_id,
+    )
+
+    if not success:
+        raise HTTPException(status_code=404, detail="请求不存在")
+
+    return {
+        "code": 0,
+        "message": "处理成功",
+        "data": {"request_id": request_id, "resolution": resolution},
+    }
+
+
+@router.get("/agents")
+async def list_agents(
+    skill: Optional[str] = Query(default=None, description="技能筛选"),
+    status: Optional[str] = Query(default=None, description="状态筛选"),
+):
+    """获取人工客服列表"""
+    collaboration_service = get_collaboration_service()
+    agents = collaboration_service.human_agent_service.list_agents(
+        skill=skill,
+        status=status,
+    )
+
+    return {
+        "code": 0,
+        "message": "获取成功",
+        "data": agents,
+    }
+
+
+@router.get("/collaboration/stats")
+async def get_collaboration_stats():
+    """获取人机协同统计"""
+    collaboration_service = get_collaboration_service()
+    stats = collaboration_service.get_collaboration_stats()
+
+    return {
+        "code": 0,
+        "message": "获取成功",
+        "data": stats,
+    }
