@@ -9,3 +9,14 @@ build/
 .vscode/
 *.log
 .DS_Store
+
+# 敏感配置
+.env
+.env.local
+
+# 数据库
+*.db
+*.sqlite
+
+# 临时文件
+*.tmp

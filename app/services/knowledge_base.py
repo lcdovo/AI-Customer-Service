@@ -1,18 +1,124 @@
 """
 知识库服务 - 文档分块、向量化、存储、检索
 支持多种分块策略：按句子、按段落、固定长度
+支持混合检索：向量检索 + BM25 关键词检索
+支持查询缓存与查询扩展
 """
 import re
 import time
 import uuid
 import logging
-from typing import List, Dict, Any, Optional
+import hashlib
+from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
+from collections import Counter
 
 from app.config.config import settings
 from app.services.embedding_service import get_embedding_service
 
 logger = logging.getLogger(__name__)
+
+
+class QueryCache:
+    """查询结果缓存 - 避免重复计算"""
+
+    def __init__(self, max_size: int = 200, ttl: int = 300):
+        self._cache: Dict[str, Tuple[Any, float]] = {}
+        self._max_size = max_size
+        self._ttl = ttl
+
+    def get(self, key: str) -> Optional[Any]:
+        if key not in self._cache:
+            return None
+        value, ts = self._cache[key]
+        if time.time() - ts > self._ttl:
+            del self._cache[key]
+            return None
+        return value
+
+    def set(self, key: str, value: Any):
+        if len(self._cache) >= self._max_size:
+            oldest = min(self._cache, key=lambda k: self._cache[k][1])
+            del self._cache[oldest]
+        self._cache[key] = (value, time.time())
+
+    def clear(self):
+        self._cache.clear()
+
+    @staticmethod
+    def make_key(query: str, top_k: int, threshold: float) -> str:
+        raw = f"{query}|{top_k}|{threshold}"
+        return hashlib.md5(raw.encode()).hexdigest()
+
+
+class BM25Scorer:
+    """BM25 关键词检索评分器"""
+
+    def __init__(self, k1: float = 1.5, b: float = 0.75):
+        self.k1 = k1
+        self.b = b
+        self._corpus: List[str] = []
+        self._doc_count = 0
+        self._avg_dl = 0.0
+        self._df: Dict[str, int] = {}
+
+    def build_index(self, documents: List[str]):
+        self._corpus = documents
+        self._doc_count = len(documents)
+        if not documents:
+            return
+
+        total_len = 0
+        self._df = {}
+
+        for doc in documents:
+            tokens = self._tokenize(doc)
+            total_len += len(tokens)
+            seen = set()
+            for token in tokens:
+                if token not in seen:
+                    self._df[token] = self._df.get(token, 0) + 1
+                    seen.add(token)
+
+        self._avg_dl = total_len / max(self._doc_count, 1)
+
+    def score(self, query: str, doc_idx: int) -> float:
+        if doc_idx >= len(self._corpus) or self._doc_count == 0:
+            return 0.0
+
+        query_tokens = self._tokenize(query)
+        doc_tokens = self._tokenize(self._corpus[doc_idx])
+
+        if not doc_tokens or not query_tokens:
+            return 0.0
+
+        tf = Counter(doc_tokens)
+        doc_len = len(doc_tokens)
+        score = 0.0
+
+        for qt in set(query_tokens):
+            f = tf.get(qt, 0)
+            if f == 0:
+                continue
+            df = self._df.get(qt, 0)
+            idf = (self._doc_count - df + 0.5) / (df + 0.5) + 1
+            idf = max(0, idf)
+            tf_norm = (f * (self.k1 + 1)) / (f + self.k1 * (1 - self.b + self.b * doc_len / max(self._avg_dl, 1)))
+            score += idf * tf_norm
+
+        return score
+
+    @staticmethod
+    def _tokenize(text: str) -> List[str]:
+        text = text.lower().strip()
+        tokens = []
+        english = re.findall(r'[a-zA-Z0-9]+', text)
+        tokens.extend(english)
+        chinese = re.findall(r'[\u4e00-\u9fff]', text)
+        tokens.extend(chinese)
+        for i in range(len(chinese) - 1):
+            tokens.append(chinese[i] + chinese[i + 1])
+        return tokens
 
 
 class DocumentChunker:
@@ -136,6 +242,10 @@ class KnowledgeBaseService:
         self._embedding_service = None
         self._vector_store = None
         self._initialized = False
+        self._query_cache = QueryCache(max_size=500, ttl=600)
+        self._bm25 = BM25Scorer()
+        self._bm25_built = False
+        self._bm25_chunks = []
 
     def initialize(self):
         if self._initialized:
@@ -154,6 +264,7 @@ class KnowledgeBaseService:
                 )
                 if self._vector_store.connect():
                     logger.info("KnowledgeBase: Milvus connected")
+                    self._load_bm25_from_milvus()
                 else:
                     logger.warning("KnowledgeBase: Milvus connection failed, using memory")
                     self._vector_store = None
@@ -164,6 +275,20 @@ class KnowledgeBaseService:
             logger.info("KnowledgeBase: Using memory-based storage")
 
         self._initialized = True
+
+    def _load_bm25_from_milvus(self):
+        """从Milvus加载所有chunk数据用于BM25索引"""
+        if not self._vector_store:
+            return
+        try:
+            chunks = self._vector_store.query_all(limit=10000)
+            if chunks:
+                self._bm25.build_index([c["content"] for c in chunks])
+                self._bm25_chunks = chunks
+                self._bm25_built = True
+                logger.info(f"BM25 index loaded from Milvus: {len(chunks)} chunks")
+        except Exception as e:
+            logger.warning(f"Failed to load BM25 from Milvus: {e}")
 
     def add_document(
         self,
@@ -204,6 +329,23 @@ class KnowledgeBaseService:
         }
 
         self._documents.append(doc_record)
+        self._bm25_built = False
+        self._query_cache.clear()
+
+        if self._vector_store and self._bm25_chunks:
+            for chunk in chunks:
+                self._bm25_chunks.append({
+                    "id": chunk["id"],
+                    "title": title,
+                    "content": chunk["content"],
+                    "category": category,
+                    "keywords": ",".join(keywords) if keywords else "",
+                    "source": source,
+                })
+            self._bm25_built = False
+
+        for chunk, embedding in zip(chunks, embeddings):
+            chunk["_embedding"] = embedding
 
         if self._vector_store:
             try:
@@ -224,8 +366,6 @@ class KnowledgeBaseService:
             except Exception as e:
                 logger.error(f"Failed to index document to Milvus: {e}")
         else:
-            for chunk, embedding in zip(chunks, embeddings):
-                chunk["_embedding"] = embedding
             logger.info(f"Document '{title}' stored in memory with {len(chunks)} chunks")
 
         return {
@@ -245,30 +385,140 @@ class KnowledgeBaseService:
         top_k = top_k or settings.RAG_TOP_K
         similarity_threshold = similarity_threshold or settings.RAG_SIMILARITY_THRESHOLD
 
+        cache_key = QueryCache.make_key(query, top_k, similarity_threshold)
+        cached = self._query_cache.get(cache_key)
+        if cached:
+            return {**cached, "from_cache": True}
+
         query_embedding = self._embedding_service.encode(query)
 
         if self._vector_store:
             try:
-                results = self._vector_store.search(
+                vector_results = self._vector_store.search(
                     query_embedding=query_embedding,
                     top_k=top_k * 2,
                     score_threshold=similarity_threshold,
                 )
+                if not vector_results:
+                    vector_results = self._memory_search(query_embedding, query, top_k, similarity_threshold)
             except Exception as e:
                 logger.error(f"Milvus search error: {e}")
-                results = self._memory_search(query_embedding, query, top_k, similarity_threshold)
+                vector_results = self._memory_search(query_embedding, query, top_k, similarity_threshold)
         else:
-            results = self._memory_search(query_embedding, query, top_k, similarity_threshold)
+            vector_results = self._memory_search(query_embedding, query, top_k, similarity_threshold)
 
-        reranked = self._rerank_results(query, results, top_k)
+        bm25_results = self._bm25_search(query, top_k)
 
-        return {
+        merged = self._merge_results(vector_results, bm25_results, top_k)
+
+        reranked = self._rerank_results(query, merged, top_k)
+
+        strategy = "hybrid" if (vector_results and bm25_results) else (
+            "vector" if vector_results else "memory"
+        )
+        if not vector_results and not bm25_results:
+            strategy = "empty"
+
+        result = {
             "success": True,
             "query": query,
             "results": reranked,
-            "total_candidates": len(results),
-            "search_strategy": "vector" if self._vector_store else "memory",
+            "total_candidates": len(merged),
+            "search_strategy": strategy,
+            "from_cache": False,
         }
+
+        self._query_cache.set(cache_key, result)
+        return result
+
+    def _bm25_search(self, query: str, top_k: int) -> List[Dict[str, Any]]:
+        corpus = []
+        meta_chunks = []
+
+        if self._bm25_chunks:
+            meta_chunks = self._bm25_chunks
+            corpus = [c["content"] for c in meta_chunks]
+        elif self._documents:
+            for doc in self._documents:
+                for chunk in doc["chunks"]:
+                    corpus.append(chunk["content"])
+                    meta_chunks.append({
+                        "id": chunk["id"],
+                        "title": doc["title"],
+                        "category": doc.get("category", ""),
+                        "keywords": doc.get("keywords", []),
+                        "source": doc.get("source", ""),
+                    })
+
+        if not corpus:
+            return []
+
+        if not self._bm25_built:
+            self._bm25.build_index(corpus)
+            self._bm25_built = True
+
+        results = []
+        for idx, meta in enumerate(meta_chunks):
+            score = self._bm25.score(query, idx)
+            if score > 0:
+                results.append({
+                    "id": meta["id"],
+                    "title": meta.get("title", ""),
+                    "content": corpus[idx] if idx < len(corpus) else "",
+                    "category": meta.get("category", ""),
+                    "keywords": meta.get("keywords", []),
+                    "source": meta.get("source", ""),
+                    "vector_score": 0.0,
+                    "bm25_score": score,
+                    "final_score": score,
+                })
+
+        results.sort(key=lambda x: x.get("bm25_score", 0), reverse=True)
+        return results[:top_k * 2]
+
+    def _merge_results(
+        self,
+        vector_results: List[Dict[str, Any]],
+        bm25_results: List[Dict[str, Any]],
+        top_k: int,
+    ) -> List[Dict[str, Any]]:
+        if not bm25_results:
+            return vector_results
+        if not vector_results:
+            return bm25_results
+
+        merged = {}
+        all_docs = vector_results + bm25_results
+
+        max_vector = max((r.get("vector_score", 0) for r in vector_results), default=1.0)
+        max_bm25 = max((r.get("bm25_score", 0) for r in bm25_results), default=1.0)
+
+        for doc in all_docs:
+            doc_id = doc.get("id", "")
+            if doc_id not in merged:
+                merged[doc_id] = doc.copy()
+                merged[doc_id]["vector_score"] = 0.0
+                merged[doc_id]["bm25_score"] = 0.0
+
+            if "vector_score" in doc:
+                normalized = doc.get("vector_score", 0) / max(max_vector, 0.001)
+                merged[doc_id]["vector_score"] = max(merged[doc_id].get("vector_score", 0), normalized)
+
+            if "bm25_score" in doc:
+                normalized = doc.get("bm25_score", 0) / max(max_bm25, 0.001)
+                merged[doc_id]["bm25_score"] = max(merged[doc_id].get("bm25_score", 0), normalized)
+
+        alpha = settings.RAG_VECTOR_WEIGHT
+        beta = 1.0 - alpha
+
+        for doc_id, doc in merged.items():
+            vec_s = doc.get("vector_score", 0)
+            bm_s = doc.get("bm25_score", 0)
+            doc["final_score"] = round(alpha * vec_s + beta * bm_s, 4)
+
+        results = list(merged.values())
+        results.sort(key=lambda x: x.get("final_score", 0), reverse=True)
+        return results[:top_k * 2]
 
     def _memory_search(
         self,
@@ -305,29 +555,57 @@ class KnowledgeBaseService:
         candidates: List[Dict[str, Any]],
         top_k: int,
     ) -> List[Dict[str, Any]]:
-        if not settings.RAG_USE_RERANKER or not candidates:
-            return candidates[:top_k]
+        if not candidates:
+            return []
 
         query_lower = query.lower()
+        query_tokens = BM25Scorer._tokenize(query)
+        query_chars = set(re.findall(r'[\u4e00-\u9fff]|[a-zA-Z0-9]+', query_lower))
         scored = []
+        seen_contents = set()
 
         for candidate in candidates:
-            score = candidate.get("vector_score", 0)
+            content_hash = candidate.get("content", "")[:100]
+            if content_hash in seen_contents:
+                continue
+            seen_contents.add(content_hash)
+
+            score = candidate.get("final_score", candidate.get("vector_score", 0))
 
             title = candidate.get("title", "").lower()
             content = candidate.get("content", "").lower()
 
             if query_lower in title:
                 score += 0.3
+            elif any(t in title for t in query_chars):
+                score += 0.15
+
             if query_lower in content:
+                score += 0.2
+            elif any(t in content for t in query_chars):
                 score += 0.1
 
+            title_words = set(re.findall(r'[a-zA-Z0-9]+|[\u4e00-\u9fff]', title))
+            content_words = set(re.findall(r'[a-zA-Z0-9]+|[\u4e00-\u9fff]', content))
+            token_overlap = sum(1 for t in query_tokens if t in title_words or t in content_words)
+            score += min(token_overlap * 0.04, 0.2)
+
             keywords = candidate.get("keywords", [])
+            if isinstance(keywords, str):
+                keywords = [k.strip() for k in keywords.split(",") if k.strip()]
             if isinstance(keywords, list):
                 keyword_match = sum(
-                    1 for kw in keywords if kw.lower() in query_lower or query_lower in kw.lower()
+                    1 for kw in keywords
+                    if kw.lower() in query_lower or query_lower in kw.lower()
                 )
-                score += keyword_match * 0.05
+                score += min(keyword_match * 0.1, 0.3)
+
+            cat = candidate.get("category", "")
+            if cat and cat.lower() in query_lower:
+                score += 0.15
+
+            if len(content) > 50:
+                score += 0.02
 
             candidate["final_score"] = round(score, 4)
             scored.append(candidate)
@@ -393,10 +671,15 @@ class KnowledgeBaseService:
 
     def clear_all(self) -> Dict[str, Any]:
         self._documents.clear()
+        self._query_cache.clear()
+        self._bm25 = BM25Scorer()
+        self._bm25_built = False
+        self._bm25_chunks = []
 
         if self._vector_store:
             try:
                 self._vector_store.drop_collection()
+                self._vector_store.connect()
             except Exception as e:
                 logger.error(f"Failed to clear Milvus collection: {e}")
 

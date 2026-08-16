@@ -1,0 +1,732 @@
+{
+  "timestamp": "2026-08-16T19:24:36.218562",
+  "knowledge_base": {
+    "total_documents": 19,
+    "total_chunks": 96,
+    "vector_store_count": 289,
+    "backend": "milvus",
+    "collection_name": "customer_service_knowledge"
+  },
+  "baseline": {
+    "n": 24,
+    "avg_ms": 159.1,
+    "p50_ms": 139.3,
+    "p95_ms": 284.8,
+    "min_ms": 3.4,
+    "max_ms": 287.1,
+    "qps": 6.3,
+    "label": "current",
+    "k": 10,
+    "threshold": 0.1,
+    "strategies": {
+      "hybrid": 24
+    },
+    "avg_results": 9.7
+  },
+  "param_comparison": [
+    {
+      "n": 24,
+      "avg_ms": 10.8,
+      "p50_ms": 7.8,
+      "p95_ms": 26.2,
+      "min_ms": 7.4,
+      "max_ms": 30.0,
+      "qps": 92.8,
+      "label": "k5_t0.1",
+      "k": 5,
+      "threshold": 0.1,
+      "strategies": {
+        "hybrid": 24
+      },
+      "avg_results": 5.0
+    },
+    {
+      "n": 24,
+      "avg_ms": 9.5,
+      "p50_ms": 8.0,
+      "p95_ms": 25.2,
+      "min_ms": 7.6,
+      "max_ms": 25.6,
+      "qps": 105.3,
+      "label": "k5_t0.05",
+      "k": 5,
+      "threshold": 0.05,
+      "strategies": {
+        "hybrid": 24
+      },
+      "avg_results": 5.0
+    },
+    {
+      "n": 24,
+      "avg_ms": 10.1,
+      "p50_ms": 4.7,
+      "p95_ms": 26.0,
+      "min_ms": 3.8,
+      "max_ms": 27.5,
+      "qps": 99.2,
+      "label": "k10_t0.1",
+      "k": 10,
+      "threshold": 0.1,
+      "strategies": {
+        "hybrid": 24
+      },
+      "avg_results": 9.7
+    },
+    {
+      "n": 24,
+      "avg_ms": 10.5,
+      "p50_ms": 8.5,
+      "p95_ms": 24.7,
+      "min_ms": 7.9,
+      "max_ms": 25.1,
+      "qps": 95.1,
+      "label": "k10_t0.05",
+      "k": 10,
+      "threshold": 0.05,
+      "strategies": {
+        "hybrid": 24
+      },
+      "avg_results": 9.7
+    },
+    {
+      "n": 24,
+      "avg_ms": 13.5,
+      "p50_ms": 8.7,
+      "p95_ms": 30.5,
+      "min_ms": 8.2,
+      "max_ms": 30.5,
+      "qps": 73.9,
+      "label": "k15_t0.1",
+      "k": 15,
+      "threshold": 0.1,
+      "strategies": {
+        "hybrid": 24
+      },
+      "avg_results": 15.0
+    },
+    {
+      "n": 24,
+      "avg_ms": 14.8,
+      "p50_ms": 8.7,
+      "p95_ms": 32.6,
+      "min_ms": 7.9,
+      "max_ms": 105.6,
+      "qps": 67.7,
+      "label": "k15_t0.05",
+      "k": 15,
+      "threshold": 0.05,
+      "strategies": {
+        "hybrid": 24
+      },
+      "avg_results": 15.0
+    }
+  ],
+  "recall": {
+    "overall": "24/24 = 100.0%",
+    "by_category": {
+      "refund": "3/3 = 100.0%",
+      "order": "3/3 = 100.0%",
+      "product": "2/2 = 100.0%",
+      "promotion": "2/2 = 100.0%",
+      "payment": "3/3 = 100.0%",
+      "account": "3/3 = 100.0%",
+      "complaint": "2/2 = 100.0%",
+      "warranty": "3/3 = 100.0%",
+      "shipping": "3/3 = 100.0%"
+    },
+    "details": [
+      {
+        "query": "退款政策是什么",
+        "expected": "refund",
+        "hit": true,
+        "top_results": [
+          {
+            "title": "退款流程详解",
+            "score": 0.66,
+            "cat": "refund"
+          },
+          {
+            "title": "快速退款说明（简短文档）",
+            "score": 0.6484,
+            "cat": "refund"
+          },
+          {
+            "title": "7天无理由退换货政策",
+            "score": 0.6434,
+            "cat": "售后政策"
+          }
+        ],
+        "latency_ms": 4.7,
+        "strategy": "hybrid"
+      },
+      {
+        "query": "怎么申请退款",
+        "expected": "refund",
+        "hit": true,
+        "top_results": [
+          {
+            "title": "订单修改与取消",
+            "score": 0.9614,
+            "cat": "order"
+          },
+          {
+            "title": "退换货操作步骤",
+            "score": 0.9498,
+            "cat": "refund"
+          },
+          {
+            "title": "快速退款说明（简短文档）",
+            "score": 0.7811,
+            "cat": "refund"
+          }
+        ],
+        "latency_ms": 4.2,
+        "strategy": "hybrid"
+      },
+      {
+        "query": "订单状态有哪些",
+        "expected": "order",
+        "hit": true,
+        "top_results": [
+          {
+            "title": "预售与期货订单",
+            "score": 1.0109,
+            "cat": "order"
+          },
+          {
+            "title": "配送方式与时效",
+            "score": 0.7849,
+            "cat": "shipping"
+          },
+          {
+            "title": "订单状态详解",
+            "score": 0.72,
+            "cat": "order"
+          }
+        ],
+        "latency_ms": 3.8,
+        "strategy": "hybrid"
+      },
+      {
+        "query": "发什么快递几天能到",
+        "expected": "order",
+        "hit": true,
+        "top_results": [
+          {
+            "title": "发票开具说明",
+            "score": 0.7241,
+            "cat": "technical"
+          },
+          {
+            "title": "物流配送说明",
+            "score": 0.7101,
+            "cat": "order"
+          },
+          {
+            "title": "物流配送时效说明",
+            "score": 0.69,
+            "cat": "物流服务"
+          }
+        ],
+        "latency_ms": 3.9,
+        "strategy": "hybrid"
+      },
+      {
+        "query": "产品参数是什么",
+        "expected": "product",
+        "hit": true,
+        "top_results": [
+          {
+            "title": "签收与验货指引",
+            "score": 0.7963,
+            "cat": "shipping"
+          },
+          {
+            "title": "产品介绍：电动牙刷 S5",
+            "score": 0.6973,
+            "cat": "product"
+          },
+          {
+            "title": "产品介绍：智能摄像头",
+            "score": 0.6541,
+            "cat": "product"
+          }
+        ],
+        "latency_ms": 16.1,
+        "strategy": "hybrid"
+      },
+      {
+        "query": "PLUS会员有什么特权",
+        "expected": "promotion",
+        "hit": true,
+        "top_results": [
+          {
+            "title": "优惠券与促销规则",
+            "score": 1.107,
+            "cat": "promotion"
+          },
+          {
+            "title": "联系客服方式汇总",
+            "score": 1.0998,
+            "cat": "complaint"
+          },
+          {
+            "title": "会员体系说明",
+            "score": 0.75,
+            "cat": "promotion"
+          }
+        ],
+        "latency_ms": 4.0,
+        "strategy": "hybrid"
+      },
+      {
+        "query": "优惠券怎么用",
+        "expected": "promotion",
+        "hit": true,
+        "top_results": [
+          {
+            "title": "优惠券与促销规则",
+            "score": 1.1122,
+            "cat": "promotion"
+          },
+          {
+            "title": "优惠券与促销规则",
+            "score": 1.0476,
+            "cat": "promotion"
+          },
+          {
+            "title": "优惠券与促销规则",
+            "score": 0.9738,
+            "cat": "promotion"
+          }
+        ],
+        "latency_ms": 3.8,
+        "strategy": "hybrid"
+      },
+      {
+        "query": "支持什么支付方式",
+        "expected": "payment",
+        "hit": true,
+        "top_results": [
+          {
+            "title": "支付方式支持说明",
+            "score": 1.1768,
+            "cat": "payment"
+          },
+          {
+            "title": "支付方式支持说明",
+            "score": 0.8265,
+            "cat": "payment"
+          },
+          {
+            "title": "支付方式支持说明",
+            "score": 0.7916,
+            "cat": "payment"
+          }
+        ],
+        "latency_ms": 3.7,
+        "strategy": "hybrid"
+      },
+      {
+        "query": "怎么开发票",
+        "expected": "payment",
+        "hit": true,
+        "top_results": [
+          {
+            "title": "发票与税务说明",
+            "score": 0.9035,
+            "cat": "payment"
+          },
+          {
+            "title": "发票与税务说明",
+            "score": 0.8494,
+            "cat": "payment"
+          },
+          {
+            "title": "发票与税务说明",
+            "score": 0.8468,
+            "cat": "payment"
+          }
+        ],
+        "latency_ms": 4.5,
+        "strategy": "hybrid"
+      },
+      {
+        "query": "忘记密码怎么办",
+        "expected": "account",
+        "hit": true,
+        "top_results": [
+          {
+            "title": "账号安全与隐私设置",
+            "score": 1.0673,
+            "cat": "account"
+          },
+          {
+            "title": "账户安全与登录",
+            "score": 0.96,
+            "cat": "technical"
+          },
+          {
+            "title": "常见问题汇总",
+            "score": 0.9441,
+            "cat": "faq"
+          }
+        ],
+        "latency_ms": 3.8,
+        "strategy": "hybrid"
+      },
+      {
+        "query": "怎么实名认证",
+        "expected": "account",
+        "hit": true,
+        "top_results": [
+          {
+            "title": "实名认证指引",
+            "score": 1.12,
+            "cat": "account"
+          },
+          {
+            "title": "实名认证指引",
+            "score": 0.9626,
+            "cat": "account"
+          },
+          {
+            "title": "实名认证指引",
+            "score": 0.9185,
+            "cat": "account"
+          }
+        ],
+        "latency_ms": 4.5,
+        "strategy": "hybrid"
+      },
+      {
+        "query": "怎么投诉商家",
+        "expected": "complaint",
+        "hit": true,
+        "top_results": [
+          {
+            "title": "投诉处理流程",
+            "score": 1.06,
+            "cat": "complaint"
+          },
+          {
+            "title": "投诉处理流程",
+            "score": 0.983,
+            "cat": "complaint"
+          },
+          {
+            "title": "投诉处理流程",
+            "score": 0.965,
+            "cat": "complaint"
+          }
+        ],
+        "latency_ms": 4.2,
+        "strategy": "hybrid"
+      },
+      {
+        "query": "如何联系客服",
+        "expected": "complaint",
+        "hit": true,
+        "top_results": [
+          {
+            "title": "联系客服方式汇总",
+            "score": 1.0375,
+            "cat": "complaint"
+          },
+          {
+            "title": "签收与验货指引",
+            "score": 0.7735,
+            "cat": "shipping"
+          },
+          {
+            "title": "联系客服方式汇总",
+            "score": 0.6861,
+            "cat": "complaint"
+          }
+        ],
+        "latency_ms": 4.5,
+        "strategy": "hybrid"
+      },
+      {
+        "query": "保修政策是什么",
+        "expected": "warranty",
+        "hit": true,
+        "top_results": [
+          {
+            "title": "商品保修政策",
+            "score": 1.12,
+            "cat": "warranty"
+          },
+          {
+            "title": "商品保修政策",
+            "score": 0.6481,
+            "cat": "warranty"
+          },
+          {
+            "title": "产品质保与维修服务",
+            "score": 0.6451,
+            "cat": "售后服务"
+          }
+        ],
+        "latency_ms": 4.0,
+        "strategy": "hybrid"
+      },
+      {
+        "query": "怎么维修产品",
+        "expected": "warranty",
+        "hit": true,
+        "top_results": [
+          {
+            "title": "商品保修政策",
+            "score": 0.8975,
+            "cat": "warranty"
+          },
+          {
+            "title": "维修与售后服务",
+            "score": 0.8527,
+            "cat": "warranty"
+          },
+          {
+            "title": "维修与售后服务",
+            "score": 0.8281,
+            "cat": "warranty"
+          }
+        ],
+        "latency_ms": 3.9,
+        "strategy": "hybrid"
+      },
+      {
+        "query": "物流配送查询",
+        "expected": "shipping",
+        "hit": true,
+        "top_results": [
+          {
+            "title": "配送方式与时效",
+            "score": 1.1588,
+            "cat": "shipping"
+          },
+          {
+            "title": "物流配送说明",
+            "score": 0.7792,
+            "cat": "order"
+          },
+          {
+            "title": "物流配送说明",
+            "score": 0.72,
+            "cat": "order"
+          }
+        ],
+        "latency_ms": 4.1,
+        "strategy": "hybrid"
+      },
+      {
+        "query": "运费怎么计算",
+        "expected": "shipping",
+        "hit": true,
+        "top_results": [
+          {
+            "title": "运费与包邮规则",
+            "score": 1.1049,
+            "cat": "shipping"
+          },
+          {
+            "title": "运费与包邮规则",
+            "score": 0.7022,
+            "cat": "shipping"
+          },
+          {
+            "title": "退换货常见问题",
+            "score": 0.6859,
+            "cat": "refund"
+          }
+        ],
+        "latency_ms": 3.8,
+        "strategy": "hybrid"
+      },
+      {
+        "query": "如何签收验货",
+        "expected": "shipping",
+        "hit": true,
+        "top_results": [
+          {
+            "title": "签收与验货指引",
+            "score": 1.12,
+            "cat": "shipping"
+          },
+          {
+            "title": "签收与验货指引",
+            "score": 0.7345,
+            "cat": "shipping"
+          },
+          {
+            "title": "签收与验货指引",
+            "score": 0.7277,
+            "cat": "shipping"
+          }
+        ],
+        "latency_ms": 4.3,
+        "strategy": "hybrid"
+      },
+      {
+        "query": "账号安全设置",
+        "expected": "account",
+        "hit": true,
+        "top_results": [
+          {
+            "title": "账号安全与隐私设置",
+            "score": 1.33,
+            "cat": "account"
+          },
+          {
+            "title": "账号注册与登录",
+            "score": 0.7344,
+            "cat": "account"
+          },
+          {
+            "title": "账号安全与隐私设置",
+            "score": 0.6943,
+            "cat": "account"
+          }
+        ],
+        "latency_ms": 21.4,
+        "strategy": "hybrid"
+      },
+      {
+        "query": "跨境购物说明",
+        "expected": "product",
+        "hit": true,
+        "top_results": [
+          {
+            "title": "跨境购物说明",
+            "score": 1.43,
+            "cat": "product"
+          },
+          {
+            "title": "配送方式与时效",
+            "score": 0.6605,
+            "cat": "shipping"
+          },
+          {
+            "title": "预售与期货订单",
+            "score": 0.6442,
+            "cat": "order"
+          }
+        ],
+        "latency_ms": 3.8,
+        "strategy": "hybrid"
+      },
+      {
+        "query": "预售订单说明",
+        "expected": "order",
+        "hit": true,
+        "top_results": [
+          {
+            "title": "预售与期货订单",
+            "score": 1.33,
+            "cat": "order"
+          },
+          {
+            "title": "预售与期货订单",
+            "score": 0.7015,
+            "cat": "order"
+          },
+          {
+            "title": "订单修改与取消",
+            "score": 0.6943,
+            "cat": "order"
+          }
+        ],
+        "latency_ms": 27.1,
+        "strategy": "hybrid"
+      },
+      {
+        "query": "发票和税务问题",
+        "expected": "payment",
+        "hit": true,
+        "top_results": [
+          {
+            "title": "发票与税务说明",
+            "score": 1.1438,
+            "cat": "payment"
+          },
+          {
+            "title": "发票与税务说明",
+            "score": 1.0552,
+            "cat": "payment"
+          },
+          {
+            "title": "发票与税务说明",
+            "score": 0.9769,
+            "cat": "payment"
+          }
+        ],
+        "latency_ms": 15.0,
+        "strategy": "hybrid"
+      },
+      {
+        "query": "退换货操作步骤",
+        "expected": "refund",
+        "hit": true,
+        "top_results": [
+          {
+            "title": "退换货操作步骤",
+            "score": 1.4551,
+            "cat": "refund"
+          },
+          {
+            "title": "退款流程详解",
+            "score": 0.7287,
+            "cat": "refund"
+          },
+          {
+            "title": "投诉处理流程",
+            "score": 0.7219,
+            "cat": "complaint"
+          }
+        ],
+        "latency_ms": 4.1,
+        "strategy": "hybrid"
+      },
+      {
+        "query": "商品保修延保",
+        "expected": "warranty",
+        "hit": true,
+        "top_results": [
+          {
+            "title": "商品保修政策",
+            "score": 1.18,
+            "cat": "warranty"
+          },
+          {
+            "title": "商品保修政策",
+            "score": 0.753,
+            "cat": "warranty"
+          },
+          {
+            "title": "商品保修政策",
+            "score": 0.751,
+            "cat": "warranty"
+          }
+        ],
+        "latency_ms": 3.8,
+        "strategy": "hybrid"
+      }
+    ]
+  },
+  "cache": {
+    "first_pass_avg_ms": 10.8,
+    "cached_avg_ms": 4.1,
+    "hit_rate": "8/8",
+    "speedup": "2.6x"
+  },
+  "optimization_summary": {
+    "documents_count": 19,
+    "chunks_count": 96,
+    "categories_covered": 9,
+    "recall_rate": "24/24 = 100.0%",
+    "avg_latency_ms": 159.1,
+    "qps": 6.3,
+    "hybrid_search": "enabled",
+    "bm25_source": "milvus_loaded"
+  }
+}

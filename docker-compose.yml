@@ -92,6 +92,17 @@ services:
       timeout: 5s
       retries: 5
 
+  attu:
+    image: zilliz/attu:v2.4
+    container_name: cs_attu
+    environment:
+      MILVUS_URL: milvus:19530
+    ports:
+      - "8080:3000"
+    depends_on:
+      milvus:
+        condition: service_healthy
+
   app:
     build: .
     container_name: cs_app
@@ -119,6 +130,8 @@ services:
         condition: service_healthy
     volumes:
       - ./.env:/app/.env
+      - ./static:/app/static
+      - ./templates:/app/templates
 
 volumes:
   etcd_data:

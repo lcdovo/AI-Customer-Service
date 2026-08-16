@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from app.utils.database import get_db
 from app.models.models import (
-    Session, SessionStatus, Message, MessageRole, User, AgentTrace
+    Session, SessionStatus, Message, MessageRole, User, AgentTrace, EvaluationResult
 )
 from app.schemas.schemas import ChatRequest, ChatResponse, APIResponse
 from app.agent.graph import AgentGraph
@@ -104,11 +104,24 @@ async def delete_session(
     session_id: str,
     db: AsyncSession = Depends(get_db),
 ):
-    """删除会话（级联删除消息）"""
+    """删除会话（级联删除相关数据）"""
+    from sqlalchemy import delete as sql_delete
+    
     session = await db.get(Session, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="会话不存在")
 
+    # 先删除关联的AgentTrace记录
+    await db.execute(
+        sql_delete(AgentTrace).where(AgentTrace.session_id == session_id)
+    )
+    
+    # 再删除关联的EvaluationResult记录
+    await db.execute(
+        sql_delete(EvaluationResult).where(EvaluationResult.session_id == session_id)
+    )
+    
+    # 删除会话（会级联删除messages）
     await db.delete(session)
     await db.commit()
 
@@ -197,6 +210,9 @@ async def send_message(
         content=chat_data.message,
     )
     db.add(user_message)
+    session.message_count += 1
+    session.updated_at = datetime.utcnow()
+    await db.commit()
 
     # 使用 Agent 处理
     agent_state = AgentState(
@@ -243,7 +259,7 @@ async def send_message(
     )
     db.add(assistant_message)
 
-    session.message_count += 2
+    session.message_count += 1
     session.last_intent = agent_state.detected_intent
     session.updated_at = datetime.utcnow()
 
@@ -273,7 +289,7 @@ async def get_chat_history(
         raise HTTPException(status_code=404, detail="会话不存在")
 
     query = select(Message).where(Message.session_id == session_id)
-    query = query.order_by(Message.created_at.desc()).limit(limit)
+    query = query.order_by(Message.id.desc(), Message.created_at.desc()).limit(limit)
     result = await db.execute(query)
     messages = result.scalars().all()
 

@@ -1,0 +1,71 @@
+{
+  "timestamp": "2026-08-16T18:55:18.625066",
+  "kb": {
+    "total_documents": 32,
+    "total_chunks": 178,
+    "vector_store_count": 178,
+    "backend": "memory",
+    "collection_name": "memory"
+  },
+  "metrics": {
+    "base": {
+      "base_n": 12,
+      "base_avg": 2241.9,
+      "base_p95": 2371.3,
+      "base_min": 2167.9,
+      "base_max": 2371.3,
+      "base_qps": 0.4,
+      "base_strats": {
+        "hybrid": 12
+      },
+      "base_avg_results": 4.8
+    },
+    "k8_t0.1": {
+      "k8_t0.1_n": 12,
+      "k8_t0.1_avg": 2061.5,
+      "k8_t0.1_p95": 2085.8,
+      "k8_t0.1_min": 2037.0,
+      "k8_t0.1_max": 2085.8,
+      "k8_t0.1_qps": 0.5,
+      "k8_t0.1_strats": {
+        "hybrid": 12
+      },
+      "k8_t0.1_avg_results": 7.6
+    },
+    "k5_t0.05": {
+      "k5_t0.05_n": 12,
+      "k5_t0.05_avg": 2059.3,
+      "k5_t0.05_p95": 2096.8,
+      "k5_t0.05_min": 2031.8,
+      "k5_t0.05_max": 2096.8,
+      "k5_t0.05_qps": 0.5,
+      "k5_t0.05_strats": {
+        "hybrid": 12
+      },
+      "k5_t0.05_avg_results": 4.8
+    },
+    "k8_t0.15": {
+      "k8_t0.15_n": 12,
+      "k8_t0.15_avg": 2063.4,
+      "k8_t0.15_p95": 2083.8,
+      "k8_t0.15_min": 2036.5,
+      "k8_t0.15_max": 2083.8,
+      "k8_t0.15_qps": 0.5,
+      "k8_t0.15_strats": {
+        "hybrid": 12
+      },
+      "k8_t0.15_avg_results": 7.6
+    }
+  },
+  "recall": {
+    "overall": "100.0%",
+    "by_cat": {
+      "refund": "100.0%",
+      "order": "100.0%",
+      "promotion": "100.0%",
+      "technical": "100.0%",
+      "complaint": "100.0%",
+      "product": "100.0%"
+    }
+  }
+}

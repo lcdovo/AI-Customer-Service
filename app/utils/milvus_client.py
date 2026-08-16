@@ -108,10 +108,25 @@ class MilvusClient:
         self._collection.load()
         logger.info(f"Loaded collection: {self.collection_name}")
 
+    def _ensure_collection(self):
+        """确保集合存在，如不存在则创建"""
+        if self._collection is None:
+            try:
+                from pymilvus import utility
+                if utility.has_collection(self.collection_name):
+                    self._load_collection()
+                else:
+                    self._create_collection()
+                logger.info(f"Collection ensured: {self.collection_name}")
+            except Exception as e:
+                logger.error(f"Failed to ensure collection: {e}")
+                raise
+
     def insert(self, docs: List[Dict[str, Any]], embeddings: List[List[float]]) -> int:
         """插入文档及其向量"""
-        if not self._connected or not self._collection:
+        if not self._connected:
             raise RuntimeError("Milvus not connected")
+        self._ensure_collection()
 
         try:
             data = []
@@ -153,8 +168,9 @@ class MilvusClient:
         filters: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """向量相似度搜索"""
-        if not self._connected or not self._collection:
+        if not self._connected:
             raise RuntimeError("Milvus not connected")
+        self._ensure_collection()
 
         try:
             search_params = {
@@ -197,17 +213,43 @@ class MilvusClient:
             logger.error(f"Milvus search error: {e}")
             return []
 
-    def count(self) -> int:
-        if not self._collection:
-            return 0
+    def query_all(self, limit: int = 5000) -> List[Dict[str, Any]]:
+        """加载全部文档数据（用于BM25索引等）"""
+        if not self._connected:
+            return []
+        self._ensure_collection()
         try:
+            results = self._collection.query(
+                expr="",
+                output_fields=[PRIMARY_FIELD, "title", "content", "category", "keywords", "source"],
+                limit=limit,
+            )
+            docs = []
+            for row in results:
+                docs.append({
+                    "id": row.get(PRIMARY_FIELD, ""),
+                    "title": row.get("title", ""),
+                    "content": row.get("content", ""),
+                    "category": row.get("category", ""),
+                    "keywords": row.get("keywords", ""),
+                    "source": row.get("source", ""),
+                })
+            return docs
+        except Exception as e:
+            logger.error(f"Milvus query_all error: {e}")
+            return []
+
+    def count(self) -> int:
+        try:
+            self._ensure_collection()
             return self._collection.num_entities
         except Exception:
             return 0
 
     def delete(self, ids: List[str]):
-        if not self._connected or not self._collection:
+        if not self._connected:
             raise RuntimeError("Milvus not connected")
+        self._ensure_collection()
         try:
             expr = f'{PRIMARY_FIELD} in {ids}'
             self._collection.delete(expr)
@@ -224,6 +266,7 @@ class MilvusClient:
             from pymilvus import utility
             utility.drop_collection(self.collection_name)
             self._collection = None
+            self._connected = False
             logger.info(f"Dropped collection: {self.collection_name}")
         except Exception as e:
             logger.error(f"Failed to drop collection: {e}")

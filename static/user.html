@@ -45,12 +45,12 @@
   .user-session-title { font-size: 13px; color: white; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .user-session-time { font-size: 11px; color: #818cf8; }
   .user-session-delete {
-    opacity: 0;
+    opacity: 0.5;
     width: 22px;
     height: 22px;
     border: none;
     background: transparent;
-    color: rgba(255,255,255,0.5);
+    color: rgba(255,255,255,0.7);
     cursor: pointer;
     border-radius: 4px;
     font-size: 11px;
@@ -360,23 +360,32 @@ async function api(method, path, data, params) {
 
 async function deleteSession(sessionId, event) {
   event.stopPropagation();
+  event.preventDefault();
   if (!confirm('确定删除该会话？此操作不可恢复。')) return;
   try {
-    await api('DELETE', `/api/v1/chat/sessions/${sessionId}`);
-    if (state.sessionId === sessionId) {
-      state.sessionId = null;
-      state.intent = null;
-      $('#chatMessages').innerHTML = '';
+    const result = await api('DELETE', `/api/v1/chat/sessions/${sessionId}`);
+    if (result) {
+      if (state.sessionId === sessionId) {
+        state.sessionId = null;
+        state.intent = null;
+        $('#chatMessages').innerHTML = '';
+        // 自动创建新会话
+        await newSession();
+      }
+      // 刷新会话列表
+      await loadSessions();
+      toast('会话已删除', 'success');
     }
-    await loadSessions();
   } catch (e) {
     console.error('Delete session error:', e);
+    toast('删除失败: ' + e.message, 'error');
   }
 }
 
 async function loadSessions() {
   try {
     const sessions = await api('GET', `/api/v1/chat/sessions/${state.userId}`);
+    console.log('loadSessions: fetched', sessions ? sessions.length : 0, 'sessions');
     state.sessions = sessions || [];
     const container = $('#sessionList');
     container.innerHTML = '';
@@ -408,6 +417,7 @@ async function loadSessions() {
 
     const items = document.querySelectorAll('.user-session-item');
     items.forEach(i => i.classList.toggle('active', i.dataset.session === state.sessionId));
+    console.log('loadSessions: rendered', items.length, 'items');
   } catch (e) {
     console.error('Load sessions error:', e);
   }
@@ -586,6 +596,26 @@ function addMessage(role, content) {
 function scrollBottom() {
   const container = $('#chatMessages');
   container.scrollTop = container.scrollHeight;
+}
+
+function toast(message, type = 'info') {
+  let container = document.getElementById('toastContainer');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toastContainer';
+    container.style.cssText = 'position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;';
+    document.body.appendChild(container);
+  }
+  const el = document.createElement('div');
+  const colors = { success: '#10b981', error: '#ef4444', info: '#3b82f6' };
+  el.style.cssText = `padding:12px 20px;background:${colors[type] || '#3b82f6'};color:white;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);font-size:14px;animation:fadeIn 0.2s ease;`;
+  el.textContent = message;
+  container.appendChild(el);
+  setTimeout(() => {
+    el.style.opacity = '0';
+    el.style.transition = 'opacity 0.3s';
+    setTimeout(() => el.remove(), 300);
+  }, 2500);
 }
 
 async function sendMessage(text) {

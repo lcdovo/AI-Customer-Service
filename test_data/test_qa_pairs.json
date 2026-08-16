@@ -1,0 +1,242 @@
+[
+  {
+    "query": "7天无理由退换货政策是什么？",
+    "category": "退换货政策",
+    "id": "45b0f4bc"
+  },
+  {
+    "query": "退货需要什么条件？",
+    "category": "退换货政策",
+    "id": "8f083164"
+  },
+  {
+    "query": "换货政策是怎样的？",
+    "category": "退换货政策",
+    "id": "6b7ee9d3"
+  },
+  {
+    "query": "订单状态有哪些？",
+    "category": "订单状态",
+    "id": "5a1c09dd"
+  },
+  {
+    "query": "怎么查询我的订单？",
+    "category": "订单状态",
+    "id": "22aeb3fe"
+  },
+  {
+    "query": "订单发货后多久能收到？",
+    "category": "订单状态",
+    "id": "d021f8a7"
+  },
+  {
+    "query": "发什么快递？",
+    "category": "物流配送",
+    "id": "2bf7b49b"
+  },
+  {
+    "query": "几天能到？",
+    "category": "物流配送",
+    "id": "eaadf60f"
+  },
+  {
+    "query": "可以指定快递吗？",
+    "category": "物流配送",
+    "id": "414b009a"
+  },
+  {
+    "query": "怎么申请退款？",
+    "category": "退款",
+    "id": "b841f845"
+  },
+  {
+    "query": "退款多久到账？",
+    "category": "退款",
+    "id": "a8dc3226"
+  },
+  {
+    "query": "退款流程是什么？",
+    "category": "退款",
+    "id": "61b8079d"
+  },
+  {
+    "query": "优惠券怎么用？",
+    "category": "优惠券",
+    "id": "5d846430"
+  },
+  {
+    "query": "优惠券能叠加吗？",
+    "category": "优惠券",
+    "id": "d95c9345"
+  },
+  {
+    "query": "怎么获得优惠券？",
+    "category": "优惠券",
+    "id": "45f63801"
+  },
+  {
+    "query": "最近有什么活动？",
+    "category": "促销活动",
+    "id": "bf568c8a"
+  },
+  {
+    "query": "618有什么优惠？",
+    "category": "促销活动",
+    "id": "e1dcac52"
+  },
+  {
+    "query": "双11什么时候开始？",
+    "category": "促销活动",
+    "id": "c2698484"
+  },
+  {
+    "query": "PLUS会员有什么特权？",
+    "category": "PLUS会员",
+    "id": "bd474b6b"
+  },
+  {
+    "query": "怎么办会员？",
+    "category": "PLUS会员",
+    "id": "98e6350a"
+  },
+  {
+    "query": "会员多少钱？",
+    "category": "PLUS会员",
+    "id": "2442fd3b"
+  },
+  {
+    "query": "忘记密码怎么办？",
+    "category": "账户安全",
+    "id": "ebfac762"
+  },
+  {
+    "query": "怎么修改密码？",
+    "category": "账户安全",
+    "id": "1dcb4ecc"
+  },
+  {
+    "query": "账号被盗了怎么办？",
+    "category": "账户安全",
+    "id": "14270e44"
+  },
+  {
+    "query": "支持什么支付方式？",
+    "category": "支付方式",
+    "id": "cc6b22e6"
+  },
+  {
+    "query": "可以分期吗？",
+    "category": "支付方式",
+    "id": "937f64d5"
+  },
+  {
+    "query": "支付失败了怎么办？",
+    "category": "支付方式",
+    "id": "9f2af9bf"
+  },
+  {
+    "query": "怎么开发票？",
+    "category": "发票",
+    "id": "d4f7545f"
+  },
+  {
+    "query": "发票能重开吗？",
+    "category": "发票",
+    "id": "527aeb4d"
+  },
+  {
+    "query": "可以开专票吗？",
+    "category": "发票",
+    "id": "212ecec3"
+  },
+  {
+    "query": "怎么投诉？",
+    "category": "投诉",
+    "id": "7c587e84"
+  },
+  {
+    "query": "投诉多久有结果？",
+    "category": "投诉",
+    "id": "10e36087"
+  },
+  {
+    "query": "投诉渠道有哪些？",
+    "category": "投诉",
+    "id": "077720f7"
+  },
+  {
+    "query": "这款手机参数是什么？",
+    "category": "产品信息",
+    "id": "4341b70a"
+  },
+  {
+    "query": "耳机有什么功能？",
+    "category": "产品信息",
+    "id": "03b106be"
+  },
+  {
+    "query": "手表防水吗？",
+    "category": "产品信息",
+    "id": "68053b26"
+  },
+  {
+    "query": "怎么保修？",
+    "category": "维修",
+    "id": "83fd796c"
+  },
+  {
+    "query": "维修需要多少钱？",
+    "category": "维修",
+    "id": "1b186a0f"
+  },
+  {
+    "query": "保修政策是什么？",
+    "category": "维修",
+    "id": "f680b4a7"
+  },
+  {
+    "query": "能上门安装吗？",
+    "category": "安装",
+    "id": "7bfb20c4"
+  },
+  {
+    "query": "安装费多少？",
+    "category": "安装",
+    "id": "fac8be41"
+  },
+  {
+    "query": "怎么预约安装？",
+    "category": "安装",
+    "id": "15c010d6"
+  },
+  {
+    "query": "怎么购物？",
+    "category": "新手指南",
+    "id": "106eb609"
+  },
+  {
+    "query": "如何下单？",
+    "category": "新手指南",
+    "id": "88e1ff6d"
+  },
+  {
+    "query": "新人有什么福利？",
+    "category": "新手指南",
+    "id": "f4a97730"
+  },
+  {
+    "query": "如何查询订单？",
+    "category": "常见问题",
+    "id": "d5b4db78"
+  },
+  {
+    "query": "怎么联系客服？",
+    "category": "常见问题",
+    "id": "d18867df"
+  },
+  {
+    "query": "客服电话是多少？",
+    "category": "常见问题",
+    "id": "c2e79234"
+  }
+]
