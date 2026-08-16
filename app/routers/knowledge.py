@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query
 from pydantic import BaseModel
 
 from app.services.knowledge_base import get_knowledge_base
+from app.services.llm_service import LLMService
 
 router = APIRouter(prefix="/api/v1/knowledge", tags=["知识库管理"])
 logger = logging.getLogger(__name__)
@@ -441,5 +442,100 @@ A: 在对话框输入"人工客服"或点击"转人工"按钮，工作日9:00-21
             "documents_count": len(results),
             "total_chunks": total_chunks,
             "results": results,
+        },
+    }
+
+
+@router.get("/stats")
+async def get_knowledge_stats():
+    """获取知识库统计信息"""
+    kb = get_knowledge_base()
+    stats = kb.get_stats()
+    return {
+        "code": 0,
+        "message": "获取成功",
+        "data": stats,
+    }
+
+
+class RagQueryRequest(BaseModel):
+    query: str
+    top_k: int = 3
+    similarity_threshold: float = 0.3
+    use_llm: bool = True
+
+
+@router.post("/rag-query")
+async def rag_query(request: RagQueryRequest):
+    """RAG问答：检索+LLM生成回答"""
+    kb = get_knowledge_base()
+    search_result = kb.search(
+        query=request.query,
+        top_k=request.top_k,
+        similarity_threshold=request.similarity_threshold,
+    )
+
+    if not search_result.get("results"):
+        return {
+            "code": 0,
+            "message": "未找到相关文档",
+            "data": {
+                "query": request.query,
+                "answer": "抱歉，知识库中没有找到与您问题相关的内容。",
+                "sources": [],
+                "search_result": search_result,
+            },
+        }
+
+    context_chunks = []
+    sources = []
+    for r in search_result["results"]:
+        context_chunks.append(f"【{r.get('title', '')}】{r.get('content', '')}")
+        sources.append({
+            "id": r.get("id", ""),
+            "title": r.get("title", ""),
+            "score": r.get("final_score", r.get("vector_score", 0)),
+        })
+
+    context_text = "\n\n".join(context_chunks)
+
+    if request.use_llm:
+        try:
+            llm = LLMService()
+            prompt = f"""基于以下参考资料回答用户的问题。如果资料中没有相关信息，请直接说明。
+
+参考资料：
+{context_text}
+
+用户问题：{request.query}
+
+请用中文给出简洁准确的回答。"""
+
+            reply, _, _ = await llm.chat(
+                user_id=0,
+                session_id="rag_query",
+                message=prompt,
+            )
+            answer = reply or f"根据知识库检索，找到 {len(sources)} 条相关内容，但AI生成回答失败。"
+        except Exception as e:
+            logger.error(f"LLM生成失败: {e}")
+            answer = f"已检索到 {len(sources)} 条相关内容，但AI回答生成失败。以下是检索到的内容摘要。"
+    else:
+        if sources:
+            top = search_result["results"][0]
+            answer = f"根据知识库检索，找到相关内容：{top.get('content', '')}"
+        else:
+            answer = "未找到相关内容。"
+
+    return {
+        "code": 0,
+        "message": "查询成功",
+        "data": {
+            "query": request.query,
+            "answer": answer,
+            "sources": sources,
+            "chunks_count": len(search_result.get("results", [])),
+            "search_strategy": search_result.get("search_strategy", ""),
+            "search_result": search_result,
         },
     }
