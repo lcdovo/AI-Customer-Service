@@ -197,7 +197,6 @@ async def add_text_document(request: DocumentCreateRequest):
         "data": result,
     }
 
-
 @router.post("/search")
 async def search_knowledge(request: SearchRequest):
     """搜索知识库"""
@@ -223,16 +222,45 @@ async def list_documents():
     stats = kb.get_stats()
 
     doc_list = []
-    for doc in kb._documents:
-        doc_list.append({
-            "id": doc.get("id", ""),
-            "title": doc.get("title", ""),
-            "category": doc.get("category", ""),
-            "source": doc.get("source", ""),
-            "keywords": doc.get("keywords", []),
-            "chunks_count": len(doc.get("chunks", [])),
-            "created_at": doc.get("created_at", ""),
-        })
+    try:
+        from app.config.config import settings
+        import pymysql
+        conn = pymysql.connect(
+            host=settings.MYSQL_HOST,
+            port=int(settings.MYSQL_PORT),
+            user=settings.MYSQL_USER,
+            password=settings.MYSQL_PASSWORD,
+            database=settings.MYSQL_DATABASE,
+            charset="utf8mb4",
+        )
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT id, title, category, chunk_count, created_at FROM knowledge_docs ORDER BY id DESC")
+                rows = cursor.fetchall()
+                for row in rows:
+                    doc_list.append({
+                        "id": f"doc_mysql_{row[0]}",
+                        "title": row[1],
+                        "category": row[2],
+                        "source": "mysql",
+                        "keywords": [],
+                        "chunks_count": row[3] or 0,
+                        "created_at": str(row[4]) if row[4] else "",
+                    })
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning(f"Failed to load documents from MySQL: {e}")
+        for doc in kb._documents:
+            doc_list.append({
+                "id": doc.get("id", ""),
+                "title": doc.get("title", ""),
+                "category": doc.get("category", ""),
+                "source": doc.get("source", ""),
+                "keywords": doc.get("keywords", []),
+                "chunks_count": len(doc.get("chunks", [])),
+                "created_at": doc.get("created_at", ""),
+            })
 
     return {
         "code": 0,

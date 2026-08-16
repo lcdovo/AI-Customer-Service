@@ -74,6 +74,9 @@ echo   System started successfully!
 echo ----------------------------------------
 echo   Frontend:  http://localhost:8000
 echo   API Docs:  http://localhost:8000/docs
+echo   Attu:      http://localhost:8080
+echo              (Milvus Admin UI)
+echo ----------------------------------------
 echo   User:      user001 / password
 echo   Admin:     admin / admin123
 echo ========================================
@@ -81,3 +84,6 @@ echo.
 echo Press any key to open browser...
 pause >nul
 start http://localhost:8000
+echo   Opening Attu in 3 seconds...
+timeout /t 3 /nobreak >nul
+start http://localhost:8080

@@ -3,12 +3,14 @@
 支持多种分块策略：按句子、按段落、固定长度
 支持混合检索：向量检索 + BM25 关键词检索
 支持查询缓存与查询扩展
+支持 MySQL 持久化存储
 """
 import re
 import time
 import uuid
 import logging
 import hashlib
+import asyncio
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 from collections import Counter
@@ -274,7 +276,46 @@ class KnowledgeBaseService:
         else:
             logger.info("KnowledgeBase: Using memory-based storage")
 
+        self._load_from_mysql()
+
         self._initialized = True
+
+    def _load_from_mysql(self):
+        """从 MySQL 加载文档元数据 (同步方式)"""
+        try:
+            from app.config.config import settings
+            import pymysql
+
+            conn = pymysql.connect(
+                host=settings.MYSQL_HOST,
+                port=int(settings.MYSQL_PORT),
+                user=settings.MYSQL_USER,
+                password=settings.MYSQL_PASSWORD,
+                database=settings.MYSQL_DATABASE,
+                charset="utf8mb4",
+            )
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT id, title, category, chunk_count, created_at FROM knowledge_docs ORDER BY id")
+                    rows = cursor.fetchall()
+                    for row in rows:
+                        self._documents.append({
+                            "id": f"doc_mysql_{row[0]}",
+                            "title": row[1],
+                            "category": row[2],
+                            "content": "",
+                            "keywords": [],
+                            "source": "mysql",
+                            "chunks": [],
+                            "chunk_count": row[3] or 0,
+                            "created_at": str(row[4]) if row[4] else "",
+                        })
+                    if rows:
+                        logger.info(f"Loaded {len(rows)} documents from MySQL")
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.warning(f"Failed to load documents from MySQL: {e}")
 
     def _load_bm25_from_milvus(self):
         """从Milvus加载所有chunk数据用于BM25索引"""
@@ -368,11 +409,99 @@ class KnowledgeBaseService:
         else:
             logger.info(f"Document '{title}' stored in memory with {len(chunks)} chunks")
 
+        self._save_to_mysql(doc_record)
+
         return {
             "success": True,
             "document_id": doc_record["id"],
             "chunks_count": len(chunks),
         }
+
+    def _save_to_mysql(self, doc_record: Dict[str, Any]):
+        """保存文档到 MySQL (同步方式)"""
+        try:
+            from app.config.config import settings
+            import pymysql
+
+            conn = pymysql.connect(
+                host=settings.MYSQL_HOST,
+                port=int(settings.MYSQL_PORT),
+                user=settings.MYSQL_USER,
+                password=settings.MYSQL_PASSWORD,
+                database=settings.MYSQL_DATABASE,
+                charset="utf8mb4",
+            )
+            try:
+                with conn.cursor() as cursor:
+                    sql = """INSERT INTO knowledge_docs 
+                             (title, category, content, chunk_count, version, is_published, created_at, updated_at)
+                             VALUES (%s, %s, %s, %s, %s, %s, NOW(), NOW())"""
+                    content = doc_record["content"][:65000]
+                    cursor.execute(sql, (
+                        doc_record["title"],
+                        doc_record.get("category", ""),
+                        content,
+                        len(doc_record.get("chunks", [])),
+                        1,
+                        True,
+                    ))
+                conn.commit()
+                logger.info(f"Saved document '{doc_record['title']}' to MySQL")
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.warning(f"Failed to save document to MySQL: {e}")
+
+    def _delete_from_mysql(self, doc_record: Dict[str, Any]):
+        """从 MySQL 删除文档 (同步方式)"""
+        try:
+            from app.config.config import settings
+            import pymysql
+
+            conn = pymysql.connect(
+                host=settings.MYSQL_HOST,
+                port=int(settings.MYSQL_PORT),
+                user=settings.MYSQL_USER,
+                password=settings.MYSQL_PASSWORD,
+                database=settings.MYSQL_DATABASE,
+                charset="utf8mb4",
+            )
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        "DELETE FROM knowledge_docs WHERE title=%s AND category=%s",
+                        (doc_record.get("title", ""), doc_record.get("category", ""))
+                    )
+                conn.commit()
+                logger.info(f"Deleted document '{doc_record.get('title', '')}' from MySQL")
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.warning(f"Failed to delete from MySQL: {e}")
+
+    def _clear_mysql(self):
+        """清空 MySQL 文档表 (同步方式)"""
+        try:
+            from app.config.config import settings
+            import pymysql
+
+            conn = pymysql.connect(
+                host=settings.MYSQL_HOST,
+                port=int(settings.MYSQL_PORT),
+                user=settings.MYSQL_USER,
+                password=settings.MYSQL_PASSWORD,
+                database=settings.MYSQL_DATABASE,
+                charset="utf8mb4",
+            )
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute("DELETE FROM knowledge_docs")
+                conn.commit()
+                logger.info("Cleared all documents from MySQL")
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.warning(f"Failed to clear MySQL: {e}")
 
     def search(
         self,
@@ -631,12 +760,37 @@ class KnowledgeBaseService:
         self.initialize()
 
         total_docs = len(self._documents)
-        total_chunks = sum(len(d.get("chunks", [])) for d in self._documents)
+        total_chunks = sum(d.get("chunk_count", len(d.get("chunks", []))) for d in self._documents)
 
         if self._vector_store:
             vector_count = self._vector_store.count()
         else:
             vector_count = total_chunks
+
+        try:
+            from app.config.config import settings
+            import pymysql
+            conn = pymysql.connect(
+                host=settings.MYSQL_HOST,
+                port=int(settings.MYSQL_PORT),
+                user=settings.MYSQL_USER,
+                password=settings.MYSQL_PASSWORD,
+                database=settings.MYSQL_DATABASE,
+                charset="utf8mb4",
+            )
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT COUNT(*), COALESCE(SUM(chunk_count),0) FROM knowledge_docs")
+                    row = cursor.fetchone()
+                    mysql_docs = row[0] or 0
+                    mysql_chunks = row[1] or 0
+                    if mysql_docs > 0:
+                        total_docs = mysql_docs
+                        total_chunks = mysql_chunks
+            finally:
+                conn.close()
+        except Exception:
+            pass
 
         return {
             "total_documents": total_docs,
@@ -651,7 +805,7 @@ class KnowledgeBaseService:
 
         doc_to_remove = None
         for i, doc in enumerate(self._documents):
-            if doc["id"] == document_id:
+            if doc["id"] == document_id or doc.get("id") == document_id:
                 doc_to_remove = doc
                 self._documents.pop(i)
                 break
@@ -667,7 +821,41 @@ class KnowledgeBaseService:
             except Exception as e:
                 logger.error(f"Failed to delete document from Milvus: {e}")
 
+        self._delete_from_mysql(doc_to_remove)
+
         return True
+
+    def _delete_from_mysql(self, doc_record: Dict[str, Any]):
+        """从 MySQL 删除文档"""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.ensure_future(self._async_delete_from_mysql(doc_record))
+            else:
+                loop.run_until_complete(self._async_delete_from_mysql(doc_record))
+        except Exception as e:
+            logger.warning(f"Failed to delete document from MySQL: {e}")
+
+    async def _async_delete_from_mysql(self, doc_record: Dict[str, Any]):
+        """异步从 MySQL 删除文档"""
+        try:
+            from app.utils.database import async_session
+            from app.models.models import KnowledgeDoc
+            from sqlalchemy import delete
+
+            async with async_session() as session:
+                title = doc_record.get("title", "")
+                category = doc_record.get("category", "")
+                await session.execute(
+                    delete(KnowledgeDoc).where(
+                        KnowledgeDoc.title == title,
+                        KnowledgeDoc.category == category,
+                    )
+                )
+                await session.commit()
+                logger.info(f"Deleted document '{title}' from MySQL")
+        except Exception as e:
+            logger.warning(f"Failed to delete from MySQL: {e}")
 
     def clear_all(self) -> Dict[str, Any]:
         self._documents.clear()
@@ -683,7 +871,34 @@ class KnowledgeBaseService:
             except Exception as e:
                 logger.error(f"Failed to clear Milvus collection: {e}")
 
+        self._clear_mysql()
+
         return {"success": True, "message": "Knowledge base cleared"}
+
+    def _clear_mysql(self):
+        """清空 MySQL 文档表"""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.ensure_future(self._async_clear_mysql())
+            else:
+                loop.run_until_complete(self._async_clear_mysql())
+        except Exception as e:
+            logger.warning(f"Failed to clear MySQL: {e}")
+
+    async def _async_clear_mysql(self):
+        """异步清空 MySQL"""
+        try:
+            from app.utils.database import async_session
+            from app.models.models import KnowledgeDoc
+            from sqlalchemy import delete
+
+            async with async_session() as session:
+                await session.execute(delete(KnowledgeDoc))
+                await session.commit()
+                logger.info("Cleared all documents from MySQL")
+        except Exception as e:
+            logger.warning(f"Failed to clear MySQL: {e}")
 
 
 _knowledge_base: Optional[KnowledgeBaseService] = None
