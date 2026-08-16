@@ -100,9 +100,11 @@ class EnhancedIntentRecognizer:
                 keyword_result.confidence = 0.6
 
         # 判断是否需要澄清
+        # 情况1: 低置信度且有明确意图 → 需要澄清
+        # 情况2: 意图为general且消息过短 → 需要澄清(用户可能只说了"嗯"、"好的"等)
         keyword_result.needs_clarification = (
-            keyword_result.confidence < 0.4
-            and keyword_result.intent != "general"
+            (keyword_result.confidence < 0.4 and keyword_result.intent != "general")
+            or (keyword_result.intent == "general" and len(message.strip()) <= 5)
         )
 
         return keyword_result

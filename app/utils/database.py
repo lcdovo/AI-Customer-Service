@@ -95,7 +95,7 @@ async def init_database():
             default_users = [
                 User(id=1, username='user001', nickname='普通用户', level='normal'),
                 User(id=2, username='user002', nickname='VIP用户', level='vip'),
-                User(id=999, username='admin', nickname='管理员', level='admin'),
+                User(id=999, username='admin', nickname='管理员', level='enterprise'),
             ]
             session.add_all(default_users)
             await session.commit()

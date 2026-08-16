@@ -144,8 +144,15 @@ class AnswerEvaluator:
         return max(0.0, min(100.0, score))
 
     def _compute_text_similarity(self, text1: str, text2: str) -> float:
-        words1 = set(text1.lower().split())
-        words2 = set(text2.lower().split())
+        def _tokenize(text: str) -> set:
+            text_lower = text.lower()
+            chinese_chars = [c for c in text_lower if '\u4e00' <= c <= '\u9fff']
+            if chinese_chars:
+                return set(chinese_chars)
+            return set(text_lower.split())
+
+        words1 = _tokenize(text1)
+        words2 = _tokenize(text2)
 
         if not words1 or not words2:
             return 0.0

@@ -262,16 +262,18 @@ class EmbeddingService:
         self._try_init_api_backend()
 
     def _try_init_api_backend(self):
-        api_base = os.getenv("EMBEDDING_API_BASE", "")
-        api_key = os.getenv("EMBEDDING_API_KEY", "")
-        model = os.getenv("EMBEDDING_MODEL", "")
+        from app.config.config import settings
+
+        api_base = settings.EMBEDDING_API_BASE
+        api_key = settings.EMBEDDING_API_KEY
+        model = settings.EMBEDDING_MODEL
 
         if not api_base or not api_key or not model:
             logger.info("No Embedding API config found, using mock backend")
             return
 
         try:
-            dim = int(os.getenv("EMBEDDING_DIM", str(self._dim)))
+            dim = int(settings.EMBEDDING_DIM or self._dim)
             api_embedding = APIEmbedding(
                 api_base=api_base,
                 api_key=api_key,
