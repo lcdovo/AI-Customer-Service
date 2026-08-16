@@ -1,869 +1,661 @@
-# 🤖 企业智能客服系统
+# 🤖 企业智能客服与工单自动处理系统
 
-> **一句话介绍**：一个能自动回复用户、处理订单查询、退款、投诉的 AI 客服系统。
-
----
+> **定位**：成熟可落地的企业级 AI 客服系统，具备完整的 Agent 状态机、RAG 检索增强、人机协同、可观测性等核心能力。
 
 ## 目录
 
 - [一、项目简介](#一项目简介)
-- [二、你需要准备什么](#二你需要准备什么)
-- [三、最快启动：Docker 一键部署](#三最快启动docker-一键部署)
-- [四、配置 API Key（可选，不配置也能跑）](#四配置-api-key可选不配置也能跑)
-- [五、验证启动成功](#五验证启动成功)
-- [六、测试对话功能](#六测试对话功能)
-- [七、WebSocket 实时流式对话](#七websocket-实时流式对话)
-- [八、进阶：手动启动（不用 Docker）](#八进阶手动启动不用-docker)
-- [九、配置说明](#九配置说明)
-- [十、项目结构](#十项目结构)
-- [十一、常见问题解答](#十一常见问题解答)
+- [二、技术架构](#二技术架构)
+- [三、核心功能](#三核心功能)
+- [四、技术栈](#四技术栈)
+- [五、快速开始](#五快速开始)
+- [六、配置说明](#六配置说明)
+- [七、API 接口](#七api-接口)
+- [八、项目结构](#八项目结构)
+- [九、使用指南](#九使用指南)
+- [十、常见问题](#十常见问题)
 
 ---
 
 ## 一、项目简介
 
-这是一个**企业级智能客服与工单自动处理系统**，核心能力：
+本系统是一个**企业级智能客服与工单自动处理系统**，核心能力覆盖：
 
-| 能力 | 说明 |
-|------|------|
-| 🤖 **Agent 状态机** | LangGraph 风格的节点式编排，支持条件分支、工具调用、多轮对话 |
-| 🔍 **意图识别** | 3 层识别（关键词 → LLM 确认 → 上下文推断），支持 7 类意图 |
-| 🛠️ **8 个工具** | 查询订单、创建工单、申请退款、搜索知识库、转人工、发送通知等 |
-| 📚 **RAG 知识库** | Milvus 向量库 + BM25 关键词混合检索，支持多文档源 |
-| ✅ **结果校验** | 3 层校验（事实校验 → 安全校验 → 完整性校验） |
+| 能力模块 | 说明 |
+|---------|------|
+| 🤖 **Agent 状态机** | 类 LangGraph 节点式编排，支持条件分支、工具调用、多轮对话、流式输出 |
+| 🎯 **意图识别** | 多层识别策略（关键词匹配 → 否定词检测 → 上下文推断 → 延续性判断），支持 7 类意图 |
+| 🛠️ **8 个工具** | 订单查询、工单创建、退换货申请、知识库检索、转人工、发送通知、工单状态更新、用户历史查询 |
+| 📚 **RAG 知识库** | 混合检索引擎（BM25 + 向量检索 + Reranker 重排序），支持 Milvus 向量库与内存降级 |
+| ✅ **三层校验** | 事实校验、安全校验、完整性校验，保证回答质量 |
 | 🔄 **降级策略** | LLM 多模型降级、Redis 内存降级、Milvus 内存降级 |
-| 👥 **人机协同** | 自动检测转人工时机、客服智能分配、工单生命周期管理 |
-| 📊 **可观测性** | 全链路追踪、指标采集、告警管理、评价体系、A/B 测试 |
+| 👥 **人机协同** | 自动检测转人工时机、客服智能分配、工单生命周期管理、上下文传递 |
+| 📊 **可观测性** | 全链路追踪、结构化日志、指标采集、评价体系 |
 
 ---
 
-## 二、你需要准备什么
+## 二、技术架构
 
-### ✅ 必须
-
-| 工具 | 下载地址 | 安装说明 |
-|------|---------|---------|
-| **Docker Desktop for Windows** | [docker.com](https://www.docker.com/products/docker-desktop/) | 下载安装后重启电脑，确保 Docker Engine 运行中（系统托盘有小鲸鱼图标） |
-| **PowerShell** | Windows 自带 | 按 `Win + S` 搜索 "PowerShell"，右键以管理员身份运行 |
-
-### 💡 可选（没有也能跑）
-
-| 工具 | 用途 | 不装的后果 |
-|------|------|-----------|
-| **Embedding API Key** | 真实向量模型 | 用本地模拟向量代替（功能正常，效果稍差） |
-| **LLM API Key** | 真实 AI 对话 | 用内置模拟回复代替 |
-| **MySQL 客户端** | 查看数据库 | 不需要，数据存在 Docker 容器里 |
-
-> 💬 **总结**：只要有 Docker Desktop，其他一切都不需要安装！
-
----
-
-## 三、最快启动：Docker 一键部署
-
-### 第 1 步：打开 PowerShell
-
-按 `Win + S`，搜索 **PowerShell**，右键选择 **"以管理员身份运行"**。
-
-### 第 2 步：进入项目目录
-
-```powershell
-cd C:\Users\你的用户名\Desktop\项目1
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         前端层 (Web)                              │
+│              login.html / user.html / admin.html                 │
+├─────────────────────────────────────────────────────────────────┤
+│                       API 网关 (FastAPI)                          │
+│    鉴权 │ 限流 │ 路由 │ SSE/WebSocket 流式输出 │ CORS              │
+├──────────┬──────────┬──────────┬────────────────────────────────┤
+│ Agent    │ 意图识别  │ 状态机    │          RAG 引擎               │
+│ 编排器    │ (关键词)  │ (Graph)  │    BM25 + 向量 + Reranker        │
+├──────────┴──────────┴──────────┴────────────────────────────────┤
+│                       工具层 (Function Calling)                    │
+│  查询订单 │ 创建工单 │ 退换货 │ 知识库 │ 转人工 │ 通知 │ 更新状态   │
+├─────────────────────────────────────────────────────────────────┤
+│                      服务层 (Services)                            │
+│    LLM 服务 │ Embedding 服务 │ 知识库服务 │ 协作服务 │ 评价服务     │
+├─────────────────────────────────────────────────────────────────┤
+│                       数据层 (Storage)                            │
+│     MySQL 8.0 │ Redis 7 │ Milvus 2.5 (向量数据库)                │
+├─────────────────────────────────────────────────────────────────┤
+│                      可观测性层                                    │
+│         全链路追踪 │ 结构化日志 │ 指标采集 │ 评价体系               │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### 第 3 步：启动所有服务
+### Agent 状态机流程
 
-```powershell
+```
+用户输入
+  │
+  ▼
+┌────────────┐    ┌──────────────┐
+│ 意图识别    │───▶│ 需要澄清?     │───▶ 澄清追问
+└────────────┘    └──────────────┘
+  │ 明确意图
+  ▼
+┌────────────┐    ┌──────────────┐
+│ 路由决策    │───▶│ RAG 检索路径  │ (技术咨询/活动咨询)
+│            │    └──────────────┘
+│            │
+│            ├──▶│ 工具执行路径   │ (订单查询/退换货/投诉)
+│            │    └──────────────┘
+│            │
+│            └──▶│ 直接回复路径   │ (通用咨询)
+│                 └──────────────┘
+│
+│            ┌──────────────┐
+└──────────────▶ 转人工路径   │ (用户请求/连续失败)
+               └──────────────┘
+```
+
+---
+
+## 三、核心功能
+
+### 3.1 意图识别
+
+系统采用**多层识别策略**，确保意图识别的准确性：
+
+| 层级 | 方法 | 说明 |
+|------|------|------|
+| 第一层 | 关键词匹配 | 带权重的关键词匹配（高/中/低三级），快速识别常见意图 |
+| 第二层 | 否定词检测 | 检查关键词附近的否定词（如"不是退款"），降低误判 |
+| 第三层 | 上下文推断 | 基于历史对话中的工具调用结果推断意图 |
+| 第四层 | 延续性判断 | 识别追问（如"好的"、"然后呢"），保持上下文意图 |
+
+**支持的意图类型**：
+
+| 意图类型 | 说明 | 典型触发词 |
+|---------|------|-----------|
+| `query_order` | 订单查询 | 订单号、物流、发货、配送 |
+| `refund` | 退换货 | 退款、退货、退换、退钱 |
+| `complaint` | 投诉 | 投诉、差评、气愤、骗子 |
+| `technical` | 技术咨询 | 怎么用、如何、安装、设置 |
+| `promotion` | 活动咨询 | 优惠、活动、折扣、促销 |
+| `human` | 转人工 | 人工、客服、转人工 |
+| `general` | 通用咨询 | 其他所有问题 |
+
+### 3.2 Agent 工具
+
+系统实现了 **8 个结构化工具**，支持重试、超时、错误处理：
+
+| 工具名 | 中文 | 功能描述 |
+|--------|------|---------|
+| `query_order` | 订单查询 | 根据订单号查询订单状态、物流信息 |
+| `create_ticket` | 工单创建 | 创建客服工单，自动分配处理人 |
+| `apply_refund` | 退换货申请 | 申请退换货，校验订单状态 |
+| `search_kb` | 知识库搜索 | 从知识库检索相关问题答案 |
+| `escalate_to_human` | 转人工客服 | 转接人工客服，支持优先级 |
+| `send_notification` | 发送通知 | 发送短信/邮件/站内信通知 |
+| `update_ticket_status` | 更新工单状态 | 更新工单处理状态 |
+| `get_user_history` | 用户历史记录 | 获取用户历史咨询记录 |
+
+### 3.3 RAG 知识库
+
+**混合检索引擎**架构：
+
+```
+用户查询
+  │
+  ▼
+┌────────────┐    ┌──────────────┐
+│ BM25 检索   │    │ 向量检索      │
+│ (关键词匹配) │    │ (语义匹配)    │
+└────────────┘    └──────────────┘
+  │                    │
+  ▼                    ▼
+┌──────────────────────────────┐
+│       结果融合 (分数加权)       │
+└──────────────────────────────┘
+  │
+  ▼
+┌──────────────┐
+│ Reranker 重排 │
+└──────────────┘
+  │
+  ▼
+  最终结果
+```
+
+- **BM25 检索**：基于关键词统计的经典信息检索算法，擅长精确匹配
+- **向量检索**：支持 Milvus 向量数据库，不可用时自动降级到内存模式
+- **Reranker**：基于规则的重排序，综合考虑标题匹配、内容匹配、关键词重叠度等
+- **多路召回**：BM25 权重 0.6 + 向量权重 0.4，可配置
+
+### 3.4 结果校验
+
+三层校验机制确保回答质量：
+
+| 校验层 | 说明 | 通过条件 |
+|--------|------|---------|
+| **事实校验** | 检查回答中的关键信息与工具返回结果的一致性 | 事实分数 ≥ 0.6 |
+| **安全校验** | 敏感词过滤、Prompt 注入检测、越权操作拦截 | 安全分数 ≥ 0.8 |
+| **完整性校验** | 检查是否回答了用户的所有问题点 | 完整性分数 ≥ 0.5 |
+
+校验不通过时自动重生成（最多 2 次），仍失败则转人工。
+
+### 3.5 降级策略
+
+| 故障场景 | 降级策略 |
+|---------|---------|
+| LLM API 超时/限流 | 自动切换备用模型或使用规则生成默认回复 |
+| Milvus 不可用 | 降级为内存向量检索 |
+| Embedding API 不可用 | 使用本地哈希向量模拟 |
+| Redis 不可用 | 跳过缓存功能，直接操作数据库 |
+| 数据库连接失败 | 使用 SQLite 本地存储 |
+| 工具调用连续失败 | 终止自动处理，转人工并携带上下文 |
+
+### 3.6 人机协同
+
+**转人工流程**：
+
+1. **触发时机**：
+   - 用户主动要求转人工
+   - Agent 连续失败（工具/校验）
+   - 用户高优先级投诉
+   - 系统检测到情绪激动
+
+2. **上下文传递**：
+   - 完整会话历史
+   - 已调用的工具结果
+   - 用户情绪分析
+   - 问题分类和建议
+
+3. **客服分配**：
+   - 根据工单分类自动分配对应组别的客服
+   - 支持优先级（普通/紧急）
+   - SLA 时限管理
+
+---
+
+## 四、技术栈
+
+| 层级 | 技术 | 版本 | 用途 |
+|------|------|------|------|
+| 语言 | Python | 3.11+ | 主力开发语言 |
+| Web 框架 | FastAPI | 0.115 | 异步 Web 服务 |
+| ASGI 服务器 | Uvicorn | 0.30 | 生产级 ASGI 服务器 |
+| ORM | SQLAlchemy | 2.0 | 数据库操作 |
+| 关系数据库 | MySQL | 8.0 | 用户/工单/会话数据 |
+| 缓存 | Redis | 7 | 会话状态/缓存 |
+| 向量数据库 | Milvus | 2.5.6 | 向量存储与检索 |
+| 数据校验 | Pydantic | 2.9 | 请求/响应模型校验 |
+| LLM 调用 | httpx | 0.27 | 异步 HTTP 客户端 |
+| 向量客户端 | pymilvus | 2.5.6 | Milvus Python SDK |
+| 配置管理 | pydantic-settings | 2.5 | 环境变量管理 |
+| 环境变量 | python-dotenv | 1.0 | .env 文件加载 |
+| 容器化 | Docker | - | 应用容器化 |
+| 容器编排 | Docker Compose | V2 | 多服务编排 |
+| 前端 | HTML/CSS/JS | - | 原生前端页面 |
+
+---
+
+## 五、快速开始
+
+### 方式一：Docker Compose 一键部署（推荐）
+
+```bash
+# 克隆项目
+git clone <repository-url>
+cd AI-Customer
+
+# 一键启动所有服务
 docker compose up -d
-```
 
-这条命令会自动：
-- ✅ 构建应用镜像（基于 Python 3.11）
-- ✅ 启动 MySQL 8.0 容器
-- ✅ 启动 Redis 7 容器
-- ✅ 启动 Etcd + MinIO（Milvus 依赖）
-- ✅ 启动 Milvus 2.5.6 向量数据库
-- ✅ 启动智能客服应用
-
-> ⏰ **首次启动会比较慢**（需要下载镜像 + 构建），大约 3-5 分钟。
-> 后续启动会很快（秒级）。
-
-### 第 4 步：查看启动状态
-
-```powershell
+# 查看服务状态
 docker compose ps
 ```
 
-你应该看到类似的输出：
+启动完成后访问：
+- 登录页面：`http://localhost:8000/`
+- API 文档：`http://localhost:8000/docs`
+- 健康检查：`http://localhost:8000/health`
 
-```
-NAME                STATUS
-cs_mysql            Up (healthy)
-cs_redis            Up (healthy)
-cs_etcd             Up (healthy)
-cs_minio            Up (healthy)
-cs_milvus           Up (healthy)
-cs_app              Up
-```
+### 方式二：本地开发模式
 
-> ⚠️ 每个服务后面都要显示 **Up (healthy)** 或 **Up**，表示启动成功。
-> 如果某个服务显示 `Restarting` 或 `Exited`，说明启动失败，请看 [第十章](#十常见问题解答)。
+```bash
+# 安装 Python 依赖
+pip install -r requirements.txt
 
-### 第 5 步：验证服务
+# 配置环境变量（复制模板）
+cp .env.example .env
+# 编辑 .env 文件，配置 API Key 等
 
-打开浏览器访问：
-
-```
-http://localhost:8000/docs
+# 启动服务
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-如果看到 **Swagger API 文档页面**（绿色背景的交互式文档），说明启动成功！🎉
+### 预置账号
+
+| 角色 | 用户名 | 密码 |
+|------|--------|------|
+| 普通用户 | user001 | user001 |
+| 管理员 | admin | admin123 |
 
 ---
 
-## 四、配置 API Key（可选，不配置也能跑）
+## 六、配置说明
 
-### 4.1 Embedding 向量模型（推荐配置）
+### 6.1 环境变量配置
 
-向量模型决定了知识库检索的准确度。不配置时使用本地模拟向量（能跑，但效果一般）。
-
-**配置步骤：**
-
-1. 用记事本打开项目目录下的 `.env` 文件：
-   ```powershell
-   notepad .env
-   ```
-
-2. 找到 Embedding 部分，填入你的 API 信息：
-   ```
-   # Embedding API
-   EMBEDDING_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1
-   EMBEDDING_API_KEY=sk-你的真实API密钥
-   EMBEDDING_MODEL=text-embedding-v3
-   EMBEDDING_DIM=1024
-   ```
-
-**常见服务商配置示例：**
-
-| 服务商 | EMBEDDING_API_BASE | EMBEDDING_MODEL |
-|--------|-------------------|-----------------|
-| 阿里 DashScope | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `text-embedding-v3` |
-| 智谱 AI | `https://open.bigmodel.cn/api/paas/v4` | `embedding-3` |
-| OpenAI | `https://api.openai.com/v1` | `text-embedding-3-small` |
-| 任何兼容 OpenAI 格式的服务 | 对应地址 | 对应模型名 |
-
-3. 保存文件后，重启应用：
-   ```powershell
-   docker compose restart app
-   ```
-
-### 4.2 LLM 对话模型（可选）
-
-不配置时，系统用内置规则模拟回复（足够演示所有功能）。
-
-**配置步骤：**
-
-在 `.env` 文件中：
-```
-LLM_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1
-LLM_API_KEY=sk-你的真实API密钥
-LLM_MODEL=qwen-plus
-```
-
-保存后重启：
-```powershell
-docker compose restart app
-```
-
----
-
-## 五、验证启动成功
-
-### 5.1 查看健康状态
-
-浏览器访问 `http://localhost:8000/health`，应该返回：
-```json
-{"status": "healthy", "app": "智能客服系统", "version": "1.0.0"}
-```
-
-### 5.2 查看 Swagger API 文档
-
-浏览器访问 `http://localhost:8000/docs`，你会看到所有可用的 API 接口。
-
-### 5.3 查看容器日志
-
-```powershell
-# 查看应用日志
-docker compose logs -f app
-
-# 查看 MySQL 日志
-docker compose logs -f mysql
-
-# 查看 Milvus 日志
-docker compose logs -f milvus
-```
-
-### 5.4 停止服务
-
-```powershell
-# 停止所有服务（保留数据）
-docker compose down
-
-# 停止并删除所有数据（彻底清理）
-docker compose down -v
-```
-
----
-
-## 六、测试对话功能
-
-### 方法 1：在 Swagger 页面测试
-
-1. 打开 `http://localhost:8000/docs`
-2. 找到 **POST /api/v1/chat/send**
-3. 点击 **Try it out**
-4. 在请求体中输入：
-
-```json
-{
-  "user_id": 1,
-  "message": "你好，我的订单ORD20260801到哪了？"
-}
-```
-
-5. 点击 **Execute** 按钮
-6. 查看回复结果
-
-### 方法 2：用 PowerShell 命令行测试
-
-```powershell
-# 查询订单
-curl -X POST http://localhost:8000/api/v1/chat/send `
-  -H "Content-Type: application/json" `
-  -d "{\"user_id\": 1, \"message\": \"我的订单ORD20260801到哪了\"}"
-
-# 咨询退换货
-curl -X POST http://localhost:8000/api/v1/chat/send `
-  -H "Content-Type: application/json" `
-  -d "{\"user_id\": 1, \"message\": \"我想申请退款\"}"
-
-# 投诉
-curl -X POST http://localhost:8000/api/v1/chat/send `
-  -H "Content-Type: application/json" `
-  -d "{\"user_id\": 1, \"message\": \"产品有问题，我要投诉\"}"
-```
-
-### 方法 3：用浏览器直接访问
-
-```
-http://localhost:8000/docs
-```
-
-在 Swagger 页面可以测试所有 API：
-
-| API | 功能 | 示例 |
-|-----|------|------|
-| `POST /api/v1/chat/send` | 发送消息对话 | `"我的订单到哪了"` |
-| `GET /api/v1/chat/history/{session_id}` | 查看历史对话 | session_id 为对话ID |
-| `GET /api/v1/chat/tools` | 查看 AI 可用工具列表 | - |
-| `POST /api/v1/tickets` | 创建工单 | 投诉、问题反馈 |
-| `GET /api/v1/tickets` | 查询工单列表 | 查看处理进度 |
-| `POST /api/v1/handoff` | 请求转人工 | 转接真人客服 |
-| `GET /api/v1/analytics/metrics` | 查看系统指标 | 对话量、响应时间 |
-| `POST /api/v1/feedback/submit` | 提交反馈 | 点赞/点踩 |
-
----
-
-## 七、WebSocket 实时流式对话
-
-如果你想在自己的网页/APP 中嵌入智能客服，用 WebSocket 是最佳选择——用户可以看到 AI **逐字打字**的效果，体验更流畅。
-
-### 7.1 连接地址
-
-```
-ws://localhost:8000/api/v1/chat/stream
-```
-
-> 💡 如果用 HTTPS 部署，地址改为 `wss://你的域名/api/v1/chat/stream`
-
-### 7.2 发送消息格式
-
-客户端通过 WebSocket 发送 **JSON 文本**：
-
-```json
-{
-  "user_id": 1,
-  "message": "我的订单ORD20260801到哪了",
-  "session_id": "可选，不传则自动创建新会话"
-}
-```
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `user_id` | int | ✅ | 用户 ID（需要在系统中存在，可以先通过 API 创建） |
-| `message` | string | ✅ | 用户发送的消息内容 |
-| `session_id` | string | ❌ | 会话 ID，不传则自动创建新会话；传了则恢复之前的对话上下文 |
-
-### 7.3 接收消息格式
-
-服务端会推送一系列 **JSON 事件**，每个事件都有 `type` 字段表示类型：
-
-| 事件类型 | 说明 | 关键字段 |
-|---------|------|---------|
-| `stream_start` | 对话开始 | `session_id`, `trace_id` |
-| `node_start` | 某个处理节点开始 | `node`（节点名） |
-| `node_complete` | 节点完成 | `node`, `duration_ms`, `next_node` |
-| `intent` | 意图识别完成 | `intent`, `confidence` |
-| `tool_call_start` | 工具调用开始 | `tool`, `args` |
-| `tool_call_complete` | 工具调用完成 | `tool`, `success`, `execution_time_ms` |
-| `rag_result` | 知识库检索完成 | `results_count`, `top_score` |
-| `validation` | 结果校验完成 | `passed`, `overall_score` |
-| `handoff` | 触发转人工 | `reason` |
-| `token` | **流式回复的一个字/词** | `content`, `index` |
-| `done` | 本次对话全部完成 | `reply`, `intent`, `execution_time_ms` |
-| `stream_end` | 对话结束（已存入数据库） | `message_id`, `session_id` |
-| `error` | 发生错误 | `code`, `message` |
-
-> 💡 **流式打字效果**：`token` 事件就是 AI 回复的每个文字片段，你可以用它实现打字机效果。
-
-### 7.4 前端 JavaScript 示例
-
-```javascript
-// 连接 WebSocket
-const ws = new WebSocket("ws://localhost:8000/api/v1/chat/stream");
-
-// 用户发送消息
-function sendMessage(userId, message, sessionId = null) {
-  const payload = { user_id: userId, message };
-  if (sessionId) payload.session_id = sessionId;
-  ws.send(JSON.stringify(payload));
-}
-
-// 接收消息
-let fullReply = "";
-ws.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-
-  switch (data.type) {
-    case "stream_start":
-      console.log("对话开始，会话ID:", data.session_id);
-      break;
-
-    case "intent":
-      console.log("识别意图:", data.intent, "置信度:", data.confidence);
-      break;
-
-    case "tool_call_start":
-      console.log("调用工具:", data.tool);
-      break;
-
-    case "tool_call_complete":
-      console.log("工具完成:", data.tool, "成功:", data.success);
-      break;
-
-    case "token":
-      // 逐字显示，实现打字机效果
-      fullReply += data.content;
-      document.getElementById("reply").textContent = fullReply;
-      break;
-
-    case "done":
-      console.log("回复完成:", data.reply);
-      console.log("耗时:", data.execution_time_ms, "ms");
-      fullReply = "";
-      break;
-
-    case "error":
-      console.error("错误:", data.message);
-      break;
-  }
-};
-
-// 页面加载后发送一条消息
-sendMessage(1, "你好，我的订单ORD20260801到哪了");
-```
-
-### 7.5 Python 示例
-
-```python
-import asyncio
-import json
-import websockets
-
-async def chat():
-    uri = "ws://localhost:8000/api/v1/chat/stream"
-    async with websockets.connect(uri) as ws:
-        # 发送消息
-        msg = json.dumps({
-            "user_id": 1,
-            "message": "我的订单ORD20260801到哪了"
-        })
-        await ws.send(msg)
-
-        # 接收回复
-        full_reply = ""
-        while True:
-            raw = await ws.recv()
-            event = json.loads(raw)
-
-            if event["type"] == "token":
-                full_reply += event["content"]
-                print(event["content"], end="", flush=True)
-
-            elif event["type"] == "done":
-                print(f"\n\n意图: {event['intent']}")
-                print(f"耗时: {event['execution_time_ms']}ms")
-                break
-
-            elif event["type"] == "error":
-                print(f"\n错误: {event['message']}")
-                break
-
-asyncio.run(chat())
-```
-
-### 7.6 常见问题
-
-| 问题 | 原因 | 解决 |
-|------|------|------|
-| 连接不上 | 服务没启动或地址错了 | 确认服务在运行，地址正确 |
-| 收到 error 404 | 用户不存在 | 先调用 `POST /api/v1/users/` 创建用户 |
-| 收到 error 400 | 参数缺失 | 检查 `user_id` 和 `message` 是否都传了 |
-| 消息收不到 | 连接被防火墙拦截 | 检查端口是否放行 |
-
----
-
-## 八、进阶：手动启动（不用 Docker）
-
-如果你不想用 Docker，也可以直接在本地运行。
-
-### 8.1 安装 Python 3.11
-
-1. 访问 [python.org/downloads](https://www.python.org/downloads/)
-2. 点击 **Download Python 3.11.x**
-3. 运行安装程序，**重要**：勾选 **"Add Python to PATH"**
-4. 选择 **Install Now**
-5. 验证：
-   ```powershell
-   python --version
-   # 应显示: Python 3.11.x
-   ```
-
-### 8.2 安装依赖
-
-```powershell
-cd C:\Users\你的用户名\Desktop\项目1
-
-# 使用国内镜像加速（推荐）
-pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
-```
-
-### 8.3 启动服务
-
-```powershell
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-### 8.4 验证
-
-浏览器访问 `http://localhost:8000/docs`
-
-> 💡 **注意**：手动启动时，MySQL 和 Redis 需要你自己安装，或者通过 Docker Compose 单独启动它们：
-> ```powershell
-> # 只启动基础设施
-> docker compose up -d mysql redis milvus
-> ```
-
----
-
-## 九、配置说明
-
-### 9.1 环境变量（.env 文件）
-
-所有配置都在项目根目录的 `.env` 文件中。用记事本打开编辑：
-
-```powershell
-notepad .env
-```
-
-**完整配置项说明：**
+所有配置项在 `.env` 文件中设置：
 
 ```ini
 # ========== 基础设置 ==========
-APP_NAME=智能客服系统          # 应用名称
-APP_VERSION=1.0.0             # 版本号
-DEBUG=true                   # 调试模式（生产环境改为 false）
-HOST=0.0.0.0                 # 监听地址
-PORT=8000                    # 端口号
+APP_NAME=智能客服系统
+APP_VERSION=1.0.0
+DEBUG=true
 
-# ========== MySQL 数据库 ==========
-MYSQL_HOST=localhost          # MySQL 地址
-MYSQL_PORT=3306               # MySQL 端口
-MYSQL_USER=root               # MySQL 用户名
-MYSQL_PASSWORD=123456         # MySQL 密码
-MYSQL_DATABASE=customer_service  # 数据库名
+# ========== 数据库 ==========
+# 方式1: MySQL (推荐生产使用)
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=123456
+MYSQL_DATABASE=customer_service
 
-# ========== Redis 缓存 ==========
-REDIS_HOST=localhost          # Redis 地址
-REDIS_PORT=6379               # Redis 端口
-REDIS_PASSWORD=               # Redis 密码（没有就留空）
-REDIS_DB=0                    # Redis 数据库编号
+# 方式2: SQLite (本地开发)
+# DATABASE_URL_OVERRIDE=sqlite+aiosqlite:///./customer_service.db
+
+# ========== Redis ==========
+REDIS_HOST=localhost
+REDIS_PORT=6379
 
 # ========== LLM 对话模型 ==========
-LLM_API_BASE=http://localhost:8001  # API 地址
-LLM_API_KEY=                  # API 密钥（留空则使用模拟回复）
-LLM_MODEL=gpt-4o-mini         # 模型名称
+# 留空则使用内置模拟回复
+LLM_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_API_KEY=sk-xxx
+LLM_MODEL=qwen3.6-plus
 
 # ========== Milvus 向量数据库 ==========
-MILVUS_HOST=localhost         # Milvus 地址
-MILVUS_PORT=19530             # Milvus 端口
-USE_MILVUS=true               # 是否启用 Milvus
+MILVUS_HOST=localhost
+MILVUS_PORT=19531
+USE_MILVUS=true
 
 # ========== Embedding 向量模型 ==========
-EMBEDDING_API_BASE=           # Embedding API 地址（留空用模拟）
-EMBEDDING_API_KEY=            # Embedding API 密钥
-EMBEDDING_MODEL=              # Embedding 模型名称
-EMBEDDING_DIM=1024            # 向量维度
+# 留空则使用本地哈希向量
+EMBEDDING_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1
+EMBEDDING_API_KEY=sk-xxx
+EMBEDDING_MODEL=text-embedding-v3
+EMBEDDING_DIM=1024
 
-# ========== RAG 检索增强生成 ==========
-COLLECTION_NAME=customer_service_knowledge  # Milvus 集合名
-RAG_TOP_K=3                   # 检索返回文档数量
-RAG_SIMILARITY_THRESHOLD=0.3  # 相似度阈值（0-1）
-RAG_BM25_WEIGHT=0.6           # BM25 关键词检索权重
-RAG_VECTOR_WEIGHT=0.4         # 向量检索权重
-RAG_USE_RERANKER=true         # 是否启用 Reranker 重排序
+# ========== RAG 检索配置 ==========
+COLLECTION_NAME=customer_service_knowledge
+RAG_TOP_K=3
+RAG_SIMILARITY_THRESHOLD=0.3
+RAG_BM25_WEIGHT=0.6
+RAG_VECTOR_WEIGHT=0.4
+RAG_USE_RERANKER=true
 
 # ========== 文档分块配置 ==========
-CHUNK_SIZE=500                # 每个分块最大字符数
-CHUNK_OVERLAP=50              # 分块重叠字符数
-CHUNK_SPLIT_PATTERN=sentence  # 分块模式：sentence/paragraph/fixed
+CHUNK_SIZE=500
+CHUNK_OVERLAP=50
+CHUNK_SPLIT_PATTERN=sentence
 ```
 
-### 9.2 Docker Compose 服务架构
+### 6.2 端口说明
 
-```
-┌─────────────────────────────────────────────────────┐
-│                   docker compose                      │
-│                                                       │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐              │
-│  │  MySQL  │  │  Redis  │  │ Milvus  │              │
-│  │ 8.0     │  │  7     │  │ 2.5.6   │              │
-│  │ :3306   │  │ :6379  │  │ :19530  │              │
-│  └─────────┘  └─────────┘  └─────────┘              │
-│                                  ↑                    │
-│                            ┌─────┴─────┐              │
-│                            │   Etcd    │              │
-│                            │   +MinIO  │              │
-│                            └───────────┘              │
-│                                                       │
-│  ┌─────────────────────────────────────────────────┐ │
-│  │                   应用 (app)                      │ │
-│  │  Python 3.11 + FastAPI + SQLAlchemy + pymilvus   │ │
-│  │  端口: 8000                                      │ │
-│  └─────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────┘
-```
+| 端口 | 服务 | 说明 |
+|------|------|------|
+| 8000 | 应用 | FastAPI 服务端口 |
+| 3306 | MySQL | 数据库端口 |
+| 6379 | Redis | 缓存端口 |
+| 19531 | Milvus | 向量数据库端口（非标准，避免冲突） |
 
-### 9.3 端口占用说明
+### 6.3 Docker Compose 服务
 
-| 端口 | 服务 | 冲突怎么办 |
-|------|------|-----------|
-| 8000 | 应用 | 修改 `.env` 中的 `PORT` 和 `docker-compose.yml` 中的端口映射 |
-| 3306 | MySQL | 修改 `docker-compose.yml` 中的 MySQL 端口映射 |
-| 6379 | Redis | 修改 `docker-compose.yml` 中的 Redis 端口映射 |
-| 19531 | Milvus | 独立端口，避免与其他项目冲突；如需再改，同步修改 `.env` 中的 `MILVUS_PORT` |
-| 9092 | Milvus 健康检查 | 同上 |
-| 2380 | Etcd | 独立端口，如需修改同步改 `docker-compose.yml` |
-| 9002 | MinIO | 独立端口，如需修改同步改 `docker-compose.yml` |
-
----
-
-## 十、项目结构
-
-```
-项目1/
-│
-├── app/                              # 📁 核心代码
-│   │
-│   ├── agent/                        # 🤖 Agent 智能体
-│   │   ├── graph.py                  #   状态机编排（Agent 大脑，支持流式输出）
-│   │   ├── intent.py                 #   意图识别（理解用户意图）
-│   │   ├── tools.py                  #   8 个工具（查询/创建/退款等）
-│   │   ├── retrieval.py              #   混合检索（Milvus + BM25）
-│   │   ├── validation.py            #   三层结果校验
-│   │   ├── memory.py                 #   对话记忆与会话管理
-│   │   └── state.py                  #   状态定义
-│   │
-│   ├── services/                     # ⚙️ 业务服务
-│   │   ├── llm_service.py            #   LLM 模型服务
-│   │   ├── embedding_service.py      #   Embedding 向量化服务
-│   │   ├── knowledge_base.py         #   知识库服务（文档分块+向量化+存储）
-│   │   ├── evaluation.py             #   评价体系与 A/B 测试
-│   │   └── collaboration.py          #   人机协同与工单管理
-│   │
-│   ├── routers/                      # 🌐 API 路由
-│   │   ├── chat.py                   #   对话接口（REST + WebSocket）
-│   │   ├── tickets.py                #   工单接口
-│   │   ├── analytics.py              #   统计分析接口
-│   │   └── feedback.py               #   用户反馈接口
-│   │
-│   ├── utils/                        # 🔧 工具模块
-│   │   ├── database.py               #   数据库管理
-│   │   ├── milvus_client.py          #   Milvus 客户端
-│   │   └── tracking.py               #   全链路追踪与监控
-│   │
-│   ├── models/                       # 📊 数据模型（ORM）
-│   ├── schemas/                      # 📨 数据校验（Pydantic）
-│   ├── config/                       # ⚙️ 配置管理
-│   └── main.py                       # 🚀 程序入口
-│
-├── test_phase2.py                    # 🧪 Agent 核心测试
-├── test_phase3.py                    # 🧪 增强功能测试
-├── test_phase4.py                    # 🧪 可观测性测试
-│
-├── Dockerfile                        # 🐳 Docker 镜像定义
-├── docker-compose.yml                # 🐳 服务编排配置
-├── requirements.txt                  # 📦 Python 依赖清单
-├── .env                              # ⚙️ 环境变量配置（你的配置）
-├── .env.example                      # 📋 环境变量模板
-└── README.md                         # 📖 本文档
+```yaml
+services:
+  etcd:       # Milvus 元数据存储
+  minio:      # Milvus 对象存储
+  milvus:     # 向量数据库
+  mysql:      # 关系数据库
+  redis:      # 缓存
+  app:        # 应用服务
 ```
 
 ---
 
-## 十一、常见问题解答
+## 七、API 接口
 
-### Q1: `docker compose up -d` 很慢？
+### 7.1 对话接口
 
-**正常现象**。首次需要下载多个 Docker 镜像（MySQL、Redis、Milvus 等），大约 500MB+ 数据。
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/api/v1/chat/send` | 发送消息（同步返回） |
+| `WS` | `/api/v1/chat/stream` | WebSocket 实时流式对话 |
+| `GET` | `/api/v1/chat/history/{session_id}` | 获取会话历史 |
+| `GET` | `/api/v1/chat/tools` | 获取可用工具列表 |
+| `GET` | `/api/v1/chat/intents` | 获取支持的意图类型 |
 
-**加速方法**：配置 Docker 镜像加速器
-1. 打开 Docker Desktop
-2. 点击右上角 ⚙️ Settings
-3. 选择 Docker Engine
-4. 在 JSON 配置中添加：
-```json
-{
-  "registry-mirrors": [
-    "https://docker.1ms.run",
-    "https://docker.xuanyuan.me"
-  ]
-}
-```
-5. 点击 Apply & Restart
+### 7.2 用户接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/api/v1/users/` | 创建用户 |
+| `GET` | `/api/v1/users/` | 获取用户列表 |
+| `GET` | `/api/v1/users/{id}` | 获取用户详情 |
+| `POST` | `/api/v1/users/login` | 用户登录 |
+
+### 7.3 会话接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/api/v1/chat/sessions` | 创建新会话 |
+| `GET` | `/api/v1/chat/sessions` | 获取会话列表 |
+| `PATCH` | `/api/v1/chat/sessions/{id}/close` | 关闭/保存会话 |
+
+### 7.4 工单接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/api/v1/tickets` | 创建工单 |
+| `GET` | `/api/v1/tickets` | 获取工单列表 |
+| `GET` | `/api/v1/tickets/{id}` | 获取工单详情 |
+| `PUT` | `/api/v1/tickets/{id}` | 更新工单状态 |
+
+### 7.5 转人工接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/api/v1/handoff` | 请求转人工 |
+| `GET` | `/api/v1/agents` | 获取客服列表 |
+| `GET` | `/api/v1/agents/{id}` | 获取客服详情 |
+
+### 7.6 知识库接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/api/v1/knowledge/upload` | 上传文档到知识库 |
+| `GET` | `/api/v1/knowledge/documents` | 获取文档列表 |
+| `DELETE` | `/api/v1/knowledge/documents/{id}` | 删除文档 |
+| `POST` | `/api/v1/knowledge/search` | 搜索知识库 |
+| `POST` | `/api/v1/knowledge/rag-query` | RAG 问答 |
+| `GET` | `/api/v1/knowledge/stats` | 获取知识库统计 |
+
+### 7.7 分析与反馈
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/v1/analytics/metrics` | 系统指标 |
+| `GET` | `/api/v1/analytics/session` | 会话统计 |
+| `POST` | `/api/v1/feedback/submit` | 提交反馈 |
+| `GET` | `/api/v1/feedback/stats` | 反馈统计 |
+
+### 7.8 WebSocket 事件类型
+
+通过 `/api/v1/chat/stream` 连接后，服务端推送以下事件：
+
+| 事件类型 | 说明 |
+|---------|------|
+| `stream_start` | 对话开始 |
+| `node_start` | 处理节点开始 |
+| `node_complete` | 节点完成 |
+| `intent` | 意图识别完成 |
+| `tool_call_start` | 工具调用开始 |
+| `tool_call_complete` | 工具调用完成 |
+| `rag_result` | 知识库检索完成 |
+| `validation` | 结果校验完成 |
+| `handoff` | 触发转人工 |
+| `token` | 流式回复文字片段 |
+| `done` | 对话完成 |
+| `stream_end` | 会话保存完成 |
+| `error` | 发生错误 |
 
 ---
+
+## 八、项目结构
+
+```
+AI-Customer/
+├── app/                           # 核心代码
+│   ├── agent/                     # Agent 智能体
+│   │   ├── graph.py              #   状态机编排（核心大脑）
+│   │   ├── intent.py             #   意图识别（多层策略）
+│   │   ├── tools.py              #   8 个工具实现
+│   │   ├── retrieval.py          #   混合检索引擎
+│   │   ├── validation.py         #   三层结果校验
+│   │   ├── memory.py             #   对话记忆管理
+│   │   └── state.py              #   状态定义
+│   ├── services/                  # 业务服务
+│   │   ├── llm_service.py        #   LLM 模型服务
+│   │   ├── embedding_service.py  #   Embedding 向量化
+│   │   ├── knowledge_base.py     #   知识库服务
+│   │   ├── evaluation.py         #   评价体系
+│   │   └── collaboration.py      #   人机协作服务
+│   ├── routers/                   # API 路由
+│   │   ├── chat.py               #   对话接口
+│   │   ├── tickets.py            #   工单接口
+│   │   ├── knowledge.py          #   知识库接口
+│   │   ├── analytics.py          #   分析接口
+│   │   ├── feedback.py           #   反馈接口
+│   │   ├── sessions.py           #   会话接口
+│   │   └── users.py              #   用户接口
+│   ├── models/                    # 数据模型 (ORM)
+│   │   └── models.py             #   SQLAlchemy 模型定义
+│   ├── schemas/                   # 数据校验 (Pydantic)
+│   ├── utils/                     # 工具模块
+│   │   ├── database.py           #   数据库管理
+│   │   ├── milvus_client.py      #   Milvus 客户端
+│   │   └── tracking.py           #   全链路追踪
+│   ├── config/                    # 配置管理
+│   │   └── config.py             #   Settings 类定义
+│   └── main.py                    # 应用入口
+│
+├── static/                        # 前端静态文件
+│   ├── css/style.css             #   样式表
+│   ├── js/app.js                 #   管理员后台逻辑
+│   ├── login.html                #   登录页
+│   ├── user.html                 #   用户端页面
+│   └── admin.html                #   管理员后台
+│
+├── Dockerfile                     # Docker 镜像定义
+├── docker-compose.yml             # 服务编排配置
+├── requirements.txt               # Python 依赖
+├── .env                           # 环境变量配置
+├── .env.example                   # 环境变量模板
+├── start.bat                      # 一键启动（Windows）
+├── stop.bat                       # 一键停止（Windows）
+├── start_server.bat               # 服务启动脚本
+├── test_rag.py                    # RAG 功能测试
+└── README.md                      # 本文档
+```
+
+---
+
+## 九、使用指南
+
+### 9.1 用户端使用
+
+1. 打开登录页面 `http://localhost:8000/`
+2. 使用预置账号登录：
+   - 用户名：`user001`
+   - 密码：`user001`
+3. 登录后自动创建新会话
+4. 在对话框输入消息开始对话：
+   - "我的订单 ORD20260801 到哪了" → 触发订单查询
+   - "我想申请退款" → 触发退换货流程
+   - "我要投诉" → 创建投诉工单
+   - "转人工客服" → 转接人工
+
+### 9.2 管理员后台
+
+1. 使用管理员账号登录：
+   - 用户名：`admin`
+   - 密码：`admin123`
+2. 功能模块：
+   - **对话管理**：查看用户实时对话，手动回复
+   - **工单管理**：查看/处理/分配工单
+   - **转人工管理**：处理转人工请求
+   - **知识库管理**：上传/删除文档
+   - **数据看板**：查看系统统计
+
+### 9.3 API 测试
+
+访问 `http://localhost:8000/docs` 使用 Swagger UI 测试所有 API。
+
+Python 示例：
+
+```python
+import requests
+
+# 发送消息对话
+response = requests.post('http://localhost:8000/api/v1/chat/send', json={
+    'user_id': 1,
+    'message': '我的订单ORD20260801到哪了'
+})
+
+print(response.json())
+```
+
+### 9.4 WebSocket 实时对话
+
+JavaScript 示例：
+
+```javascript
+const ws = new WebSocket('ws://localhost:8000/api/v1/chat/stream');
+
+ws.onopen = () => {
+  ws.send(JSON.stringify({
+    user_id: 1,
+    message: '我的订单ORD20260801到哪了'
+  }));
+};
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  switch (data.type) {
+    case 'intent':
+      console.log('识别意图:', data.intent);
+      break;
+    case 'token':
+      console.log(data.content);  // 逐字输出
+      break;
+    case 'done':
+      console.log('完成:', data.reply);
+      break;
+  }
+};
+```
+
+---
+
+## 十、常见问题
+
+### Q1: 启动失败，端口被占用？
+
+```bash
+# Windows: 查找占用端口的进程
+netstat -ano | findstr :8000
+# 杀掉进程
+taskkill /F /PID <进程ID>
+
+# 或修改配置
+# 编辑 .env 中的 PORT 字段
+# 编辑 docker-compose.yml 中的端口映射
+```
 
 ### Q2: Milvus 启动失败？
 
-Milvus 依赖 Etcd 和 MinIO。如果 Milvus 容器状态不是 `healthy`：
+Milvus 依赖 Etcd 和 MinIO，确保它们先启动：
 
-```powershell
-# 查看 Milvus 日志
-docker compose logs milvus
-
-# 查看 Etcd 日志
-docker compose logs etcd
-
-# 查看 MinIO 日志
-docker compose logs minio
+```bash
+docker compose logs milvus     # 查看 Milvus 日志
+docker compose logs etcd       # 查看 Etcd 日志
+docker compose logs minio      # 查看 MinIO 日志
 ```
 
-**常见原因**：
-- Etcd 未就绪 → 等待 10-30 秒后自动恢复
-- 端口冲突（9001/2379） → 修改 `docker-compose.yml` 中的端口映射
-- 磁盘空间不足 → 清理 Docker 空间：`docker system prune -a`
+### Q3: LLM 回复使用模拟模式？
 
----
+当 `LLM_API_KEY` 为空或无效时，系统使用内置规则生成回复。配置真实 API 后会自动切换。
 
-### Q3: 端口被占用？
+### Q4: Embedding 未配置？
 
-**错误信息**: `Error starting ... : bind: address already in use`
-
-**解决方法**：修改 `docker-compose.yml` 中的端口映射。
-
-例如端口 8000 被占用，改成 8080：
-```yaml
-  app:
-    ports:
-      - "8080:8000"    # 左边改 8080，右边保持 8000
-```
-
-### Q4: 已经有其他项目在用 Milvus，会冲突吗？
-
-**不会！** 我们的 Milvus 使用独立端口 **19531**（默认），和其他项目的 19530 天然隔离：
-
-| 组件 | 我们的端口 | 常见默认端口 | 是否冲突 |
-|------|-----------|-------------|---------|
-| Milvus | **19531** | 19530 | ❌ 不冲突 |
-| Milvus 健康检查 | **9092** | 9091 | ❌ 不冲突 |
-| Etcd | **2380** | 2379 | ❌ 不冲突 |
-| MinIO | **9002** | 9001 | ❌ 不冲突 |
-
-启动后两套 Milvus 完全独立，数据存储在不同的 Docker Volume 中，互不影响。
-
-如果你还有其他项目占用了这些新端口，再按同样思路修改 `docker-compose.yml` 左侧的数字就行（比如改成 19532、9093 等）。
-
----
-
-### Q4: 如何查看容器状态？
-
-```powershell
-# 查看所有服务状态
-docker compose ps
-
-# 查看某个服务的日志
-docker compose logs -f app       # 应用日志
-docker compose logs -f mysql     # MySQL 日志
-docker compose logs -f redis     # Redis 日志
-docker compose logs -f milvus    # Milvus 日志
-
-# 查看资源占用
-docker stats
-```
-
----
+未配置时使用本地哈希向量模拟，功能正常但检索效果一般。配置后可获得更准确的语义匹配。
 
 ### Q5: 如何重置数据？
 
-```powershell
-# 停止并删除所有容器和数据
-docker compose down -v
+```bash
+# Docker 模式
+docker compose down -v    # 停止并删除所有数据卷
+docker compose up -d      # 重新启动
 
-# 重新启动（空数据库）
-docker compose up -d
+# 本地模式
+# 删除 customer_service.db 文件
 ```
 
-> ⚠️ **警告**：`docker compose down -v` 会删除所有数据（数据库、Redis、Milvus），不可恢复！
+### Q6: 如何查看日志？
+
+```bash
+# Docker 模式
+docker compose logs -f app      # 应用日志
+docker compose logs -f mysql    # MySQL 日志
+docker compose logs -f milvus   # Milvus 日志
+
+# 本地模式
+# 查看控制台输出或配置日志文件
+```
+
+### Q7: 知识库如何扩展？
+
+1. 通过 API 上传文档：`POST /api/v1/knowledge/upload`
+2. 上传的文档会自动进行分块和向量化
+3. 支持通过 `POST /api/v1/knowledge/search` 搜索
+
+### Q8: 如何自定义意图？
+
+编辑 `app/agent/intent.py` 中的 `INTENT_PATTERNS` 字典，添加新的意图类型和关键词。
 
 ---
 
-### Q6: Embedding API 连接失败？
+## 附录：版本历史
 
-如果配置了 Embedding API 但连接失败：
-
-1. 检查 `.env` 中的配置是否正确
-2. 确认 API Key 有效
-3. 查看应用日志：
-   ```powershell
-   docker compose logs app | findstr "Embedding"
-   ```
-
-系统会自动降级到本地模拟向量，功能不受影响。
+| 版本 | 说明 |
+|------|------|
+| v1.0.3 | 管理员后台完善、RAG 功能增强、转人工流程优化 |
+| v1.0.2 | 转人工流程修复、工具名中文映射、前端交互优化 |
+| v1.0.1 | RAG 配置完善、启动脚本优化、测试修复 |
+| v1.0.0 | 初始稳定版本，完整功能实现 |
 
 ---
 
-### Q7: 应用无法连接数据库？
-
-MySQL 容器可能还没完全就绪。等待几秒后重试。
-
-如果持续失败：
-```powershell
-# 检查 MySQL 状态
-docker compose ps mysql
-
-# 查看 MySQL 日志
-docker compose logs mysql
-```
-
----
-
-### Q8: 如何更新项目？
-
-```powershell
-# 拉取最新代码（如果用 Git）
-git pull
-
-# 重新构建并启动
-docker compose up -d --build
-```
-
----
-
-### Q9: 如何修改密码或配置？
-
-1. 修改 `.env` 文件中的配置
-2. 重启应用：
-   ```powershell
-   docker compose restart app
-   ```
-
-如果修改了数据库密码，还需要修改 `docker-compose.yml` 中 MySQL 的 `MYSQL_ROOT_PASSWORD`。
-
----
-
-### Q10: Docker 容器占用空间太大？
-
-```powershell
-# 查看 Docker 占用
-docker system df
-
-# 清理未使用的镜像和容器
-docker system prune -a
-
-# 清理所有未使用资源（谨慎使用）
-docker system prune -a --volumes
-```
-
----
-
-### Q11: WebSocket 连接失败或无响应？
-
-**常见原因与解决：**
-
-| 现象 | 原因 | 解决 |
-|------|------|------|
-| 连接立即断开 | 服务未启动 | 确认 `docker compose ps` 中 app 为 Up 状态 |
-| 收到 `error 404` | 用户不存在 | 先调用 `POST /api/v1/users/` 创建用户 |
-| 收到 `error 400` | 参数缺失 | 确保 `user_id` 和 `message` 都传了 |
-| 收到 `error 500` | 数据库未就绪 | 等待 MySQL 就绪，或查看 app 日志排查 |
-| 连不上但端口通 | 反向代理未配 WebSocket | Nginx 添加 `proxy_set_header Upgrade $http_upgrade` |
-| 连接后无事件 | 发送的消息格式不对 | 确保发送的是 JSON 文本，不是二进制 |
-
-**调试技巧**：查看应用日志追踪 WebSocket 事件：
-```powershell
-docker compose logs -f app | findstr "stream"
-```
-
----
-
-## 附录：API 快速参考
-
-### 对话接口
-
-```
-POST /api/v1/chat/send        发送消息（同步返回）
-WS   /api/v1/chat/stream      WebSocket 实时流式对话
-GET  /api/v1/chat/history/{id} 查看历史
-GET  /api/v1/chat/tools        可用工具列表
-GET  /api/v1/chat/intents      支持的意图类型
-```
-
-### 工单接口
-
-```
-POST /api/v1/tickets           创建工单
-GET  /api/v1/tickets           查询工单列表
-GET  /api/v1/tickets/{id}      查询单个工单
-PUT  /api/v1/tickets/{id}      更新工单状态
-```
-
-### 人机协同
-
-```
-POST /api/v1/handoff           请求转人工
-GET  /api/v1/agents            客服列表
-GET  /api/v1/agents/{id}       客服详情
-```
-
-### 监控与反馈
-
-```
-GET  /api/v1/analytics/metrics     系统指标
-GET  /api/v1/analytics/session      会话统计
-POST /api/v1/feedback/submit       提交反馈
-GET  /api/v1/feedback/stats        反馈统计
-```
-
----
-
-**启动顺利，使用愉快！🎉**
+**🎉 开始使用吧！**

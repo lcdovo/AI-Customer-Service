@@ -41,11 +41,12 @@ class Settings(BaseSettings):
 
     # RAG 检索增强生成
     COLLECTION_NAME: str = Field(default="customer_service_knowledge")
-    RAG_TOP_K: int = Field(default=3)
-    RAG_SIMILARITY_THRESHOLD: float = Field(default=0.3)
-    RAG_BM25_WEIGHT: float = Field(default=0.6)
-    RAG_VECTOR_WEIGHT: float = Field(default=0.4)
+    RAG_TOP_K: int = Field(default=5)
+    RAG_SIMILARITY_THRESHOLD: float = Field(default=0.2)
+    RAG_BM25_WEIGHT: float = Field(default=0.5)
+    RAG_VECTOR_WEIGHT: float = Field(default=0.5)
     RAG_USE_RERANKER: bool = Field(default=True)
+    RAG_SEARCH_TOP_K_MULTIPLIER: int = Field(default=3)
 
     # 文档分块配置
     CHUNK_SIZE: int = Field(default=500)

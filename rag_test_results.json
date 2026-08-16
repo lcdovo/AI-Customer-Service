@@ -1,0 +1,399 @@
+{
+  "test_time": "2026-08-16 15:19:45",
+  "total_documents": 19,
+  "total_queries": 35,
+  "embedding_backend": "api(text-embedding-v3)",
+  "config_results": [
+    {
+      "config_name": "当前默认配置",
+      "parameters": {
+        "bm25_weight": 0.6,
+        "vector_weight": 0.4,
+        "use_reranker": true,
+        "similarity_threshold": 0.3,
+        "top_k": 3,
+        "search_top_k_multiplier": 2
+      },
+      "metrics": {
+        "recall_at_3": 0.9143,
+        "recall_at_5": 0.9143,
+        "recall_at_10": 0.9143,
+        "precision_at_3": 0.3048,
+        "precision_at_5": 0.3048,
+        "mrr": 0.8238,
+        "ndcg_at_5": 0.8473,
+        "avg_execution_time_ms": 192.45
+      },
+      "failed_queries": [
+        {
+          "query": "怎么才能打折",
+          "expected": "限时促销与满减活动",
+          "top3_results": [
+            "优惠券使用规则",
+            "VIP会员等级与权益",
+            "企业采购与定制服务"
+          ]
+        },
+        {
+          "query": "多久能收到货",
+          "expected": "物流配送时效说明",
+          "top3_results": [
+            "7天无理由退换货政策",
+            "商品质量问题处理",
+            "退款处理流程"
+          ]
+        },
+        {
+          "query": "几天能到货",
+          "expected": "物流配送时效说明",
+          "top3_results": [
+            "7天无理由退换货政策",
+            "商品质量问题处理",
+            "跨境购买与税费说明"
+          ]
+        }
+      ]
+    },
+    {
+      "config_name": "向量权重优先",
+      "parameters": {
+        "bm25_weight": 0.3,
+        "vector_weight": 0.7,
+        "use_reranker": true,
+        "similarity_threshold": 0.3,
+        "top_k": 3,
+        "search_top_k_multiplier": 2
+      },
+      "metrics": {
+        "recall_at_3": 0.9429,
+        "recall_at_5": 0.9429,
+        "recall_at_10": 0.9429,
+        "precision_at_3": 0.3143,
+        "precision_at_5": 0.3143,
+        "mrr": 0.8333,
+        "ndcg_at_5": 0.8616,
+        "avg_execution_time_ms": 4.66
+      },
+      "failed_queries": [
+        {
+          "query": "多久能收到货",
+          "expected": "物流配送时效说明",
+          "top3_results": [
+            "商品质量问题处理",
+            "7天无理由退换货政策",
+            "退款处理流程"
+          ]
+        },
+        {
+          "query": "几天能到货",
+          "expected": "物流配送时效说明",
+          "top3_results": [
+            "7天无理由退换货政策",
+            "跨境购买与税费说明",
+            "退款处理流程"
+          ]
+        }
+      ]
+    },
+    {
+      "config_name": "BM25权重优先",
+      "parameters": {
+        "bm25_weight": 0.8,
+        "vector_weight": 0.2,
+        "use_reranker": true,
+        "similarity_threshold": 0.3,
+        "top_k": 3,
+        "search_top_k_multiplier": 2
+      },
+      "metrics": {
+        "recall_at_3": 0.9429,
+        "recall_at_5": 0.9429,
+        "recall_at_10": 0.9429,
+        "precision_at_3": 0.3143,
+        "precision_at_5": 0.3143,
+        "mrr": 0.8333,
+        "ndcg_at_5": 0.8616,
+        "avg_execution_time_ms": 3.8
+      },
+      "failed_queries": [
+        {
+          "query": "多久能收到货",
+          "expected": "物流配送时效说明",
+          "top3_results": [
+            "7天无理由退换货政策",
+            "商品质量问题处理",
+            "退款处理流程"
+          ]
+        },
+        {
+          "query": "几天能到货",
+          "expected": "物流配送时效说明",
+          "top3_results": [
+            "7天无理由退换货政策",
+            "退款处理流程",
+            "商品质量问题处理"
+          ]
+        }
+      ]
+    },
+    {
+      "config_name": "高召回（扩大候选集）",
+      "parameters": {
+        "bm25_weight": 0.5,
+        "vector_weight": 0.5,
+        "use_reranker": true,
+        "similarity_threshold": 0.2,
+        "top_k": 5,
+        "search_top_k_multiplier": 3
+      },
+      "metrics": {
+        "recall_at_3": 0.9429,
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_3": 0.3143,
+        "precision_at_5": 0.2014,
+        "mrr": 0.8462,
+        "ndcg_at_5": 0.8849,
+        "avg_execution_time_ms": 3.68
+      },
+      "failed_queries": []
+    },
+    {
+      "config_name": "高精度（严格阈值）",
+      "parameters": {
+        "bm25_weight": 0.5,
+        "vector_weight": 0.5,
+        "use_reranker": true,
+        "similarity_threshold": 0.5,
+        "top_k": 3,
+        "search_top_k_multiplier": 2
+      },
+      "metrics": {
+        "recall_at_3": 0.9429,
+        "recall_at_5": 0.9429,
+        "recall_at_10": 0.9429,
+        "precision_at_3": 0.3143,
+        "precision_at_5": 0.3143,
+        "mrr": 0.8381,
+        "ndcg_at_5": 0.8653,
+        "avg_execution_time_ms": 3.6
+      },
+      "failed_queries": [
+        {
+          "query": "多久能收到货",
+          "expected": "物流配送时效说明",
+          "top3_results": [
+            "7天无理由退换货政策",
+            "退款处理流程",
+            "商品质量问题处理"
+          ]
+        },
+        {
+          "query": "几天能到货",
+          "expected": "物流配送时效说明",
+          "top3_results": [
+            "7天无理由退换货政策",
+            "跨境购买与税费说明",
+            "退款处理流程"
+          ]
+        }
+      ]
+    },
+    {
+      "config_name": "双路融合无Rerank",
+      "parameters": {
+        "bm25_weight": 0.5,
+        "vector_weight": 0.5,
+        "use_reranker": false,
+        "similarity_threshold": 0.3,
+        "top_k": 5,
+        "search_top_k_multiplier": 2
+      },
+      "metrics": {
+        "recall_at_3": 0.8571,
+        "recall_at_5": 0.9143,
+        "recall_at_10": 0.9143,
+        "precision_at_3": 0.2857,
+        "precision_at_5": 0.1843,
+        "mrr": 0.7619,
+        "ndcg_at_5": 0.8005,
+        "avg_execution_time_ms": 4.92
+      },
+      "failed_queries": [
+        {
+          "query": "怎么才能打折",
+          "expected": "限时促销与满减活动",
+          "top3_results": [
+            "优惠券使用规则",
+            "VIP会员等级与权益",
+            "客服投诉处理时效"
+          ]
+        },
+        {
+          "query": "我的快递到哪了",
+          "expected": "订单查询与物流跟踪",
+          "top3_results": [
+            "物流配送时效说明",
+            "产品使用与维护指南",
+            "7天无理由退换货政策"
+          ]
+        },
+        {
+          "query": "几天能到货",
+          "expected": "物流配送时效说明",
+          "top3_results": [
+            "7天无理由退换货政策",
+            "退款处理流程",
+            "商品质量问题处理"
+          ]
+        }
+      ]
+    },
+    {
+      "config_name": "纯BM25检索",
+      "parameters": {
+        "bm25_weight": 1.0,
+        "vector_weight": 0.0,
+        "use_reranker": true,
+        "similarity_threshold": 0.3,
+        "top_k": 5,
+        "search_top_k_multiplier": 2
+      },
+      "metrics": {
+        "recall_at_3": 0.9429,
+        "recall_at_5": 0.9714,
+        "recall_at_10": 0.9714,
+        "precision_at_3": 0.3143,
+        "precision_at_5": 0.1971,
+        "mrr": 0.8452,
+        "ndcg_at_5": 0.8776,
+        "avg_execution_time_ms": 4.71
+      },
+      "failed_queries": [
+        {
+          "query": "几天能到货",
+          "expected": "物流配送时效说明",
+          "top3_results": [
+            "7天无理由退换货政策",
+            "退款处理流程",
+            "商品质量问题处理"
+          ]
+        }
+      ]
+    },
+    {
+      "config_name": "纯向量检索",
+      "parameters": {
+        "bm25_weight": 0.0,
+        "vector_weight": 1.0,
+        "use_reranker": true,
+        "similarity_threshold": 0.3,
+        "top_k": 5,
+        "search_top_k_multiplier": 2
+      },
+      "metrics": {
+        "recall_at_3": 0.9714,
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_3": 0.3238,
+        "precision_at_5": 0.2029,
+        "mrr": 0.8548,
+        "ndcg_at_5": 0.8919,
+        "avg_execution_time_ms": 3.75
+      },
+      "failed_queries": []
+    }
+  ],
+  "chunk_results": [
+    {
+      "config_name": "sentence_500_50",
+      "parameters": {
+        "split_pattern": "sentence",
+        "chunk_size": 500,
+        "chunk_overlap": 50,
+        "total_chunks": 19
+      },
+      "metrics": {
+        "recall_at_3": 0.9429,
+        "recall_at_5": 0.9429,
+        "recall_at_10": 0.9429,
+        "mrr": 0.8524
+      }
+    },
+    {
+      "config_name": "sentence_300_50",
+      "parameters": {
+        "split_pattern": "sentence",
+        "chunk_size": 300,
+        "chunk_overlap": 50,
+        "total_chunks": 19
+      },
+      "metrics": {
+        "recall_at_3": 0.9429,
+        "recall_at_5": 0.9429,
+        "recall_at_10": 0.9429,
+        "mrr": 0.8524
+      }
+    },
+    {
+      "config_name": "sentence_800_100",
+      "parameters": {
+        "split_pattern": "sentence",
+        "chunk_size": 800,
+        "chunk_overlap": 100,
+        "total_chunks": 19
+      },
+      "metrics": {
+        "recall_at_3": 0.9429,
+        "recall_at_5": 0.9429,
+        "recall_at_10": 0.9429,
+        "mrr": 0.8524
+      }
+    },
+    {
+      "config_name": "fixed_200_50",
+      "parameters": {
+        "split_pattern": "fixed",
+        "chunk_size": 200,
+        "chunk_overlap": 50,
+        "total_chunks": 35
+      },
+      "metrics": {
+        "recall_at_3": 0.9429,
+        "recall_at_5": 0.9429,
+        "recall_at_10": 0.9429,
+        "mrr": 0.8667
+      }
+    },
+    {
+      "config_name": "fixed_500_100",
+      "parameters": {
+        "split_pattern": "fixed",
+        "chunk_size": 500,
+        "chunk_overlap": 100,
+        "total_chunks": 19
+      },
+      "metrics": {
+        "recall_at_3": 0.9429,
+        "recall_at_5": 0.9429,
+        "recall_at_10": 0.9429,
+        "mrr": 0.8524
+      }
+    },
+    {
+      "config_name": "paragraph_500_50",
+      "parameters": {
+        "split_pattern": "paragraph",
+        "chunk_size": 500,
+        "chunk_overlap": 50,
+        "total_chunks": 19
+      },
+      "metrics": {
+        "recall_at_3": 0.9429,
+        "recall_at_5": 0.9429,
+        "recall_at_10": 0.9429,
+        "mrr": 0.8524
+      }
+    }
+  ]
+}

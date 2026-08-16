@@ -122,7 +122,7 @@ class MilvusClient:
                     "title": doc.get("title", "")[:512],
                     "content": doc.get("content", "")[:65535],
                     "category": doc.get("category", "")[:128],
-                    "keywords": doc.get("keywords", "")[:1024],
+                    "keywords": self._serialize_keywords(doc.get("keywords", ""))[:1024],
                     "source": doc.get("source", "")[:256],
                     "updated_at": doc.get("updated_at", str(time.time()))[:64],
                 }
@@ -136,6 +136,14 @@ class MilvusClient:
         except Exception as e:
             logger.error(f"Failed to insert into Milvus: {e}")
             raise
+
+    @staticmethod
+    def _serialize_keywords(keywords: Any) -> str:
+        if isinstance(keywords, list):
+            return ",".join(str(k) for k in keywords)
+        if isinstance(keywords, str):
+            return keywords
+        return str(keywords) if keywords else ""
 
     def search(
         self,
