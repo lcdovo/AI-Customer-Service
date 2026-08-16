@@ -221,10 +221,25 @@ async def list_documents():
     kb = get_knowledge_base()
     stats = kb.get_stats()
 
+    doc_list = []
+    for doc in kb._documents:
+        doc_list.append({
+            "id": doc.get("id", ""),
+            "title": doc.get("title", ""),
+            "category": doc.get("category", ""),
+            "source": doc.get("source", ""),
+            "keywords": doc.get("keywords", []),
+            "chunks_count": len(doc.get("chunks", [])),
+            "created_at": doc.get("created_at", ""),
+        })
+
     return {
         "code": 0,
         "message": "获取成功",
-        "data": stats,
+        "data": {
+            **stats,
+            "documents": doc_list,
+        },
     }
 
 

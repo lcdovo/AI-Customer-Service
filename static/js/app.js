@@ -13,6 +13,17 @@ const state = {
   },
 };
 
+const toolNameMap = {
+  query_order: '订单查询',
+  create_ticket: '工单创建',
+  apply_refund: '退换货申请',
+  search_kb: '知识库搜索',
+  escalate_to_human: '转人工客服',
+  send_notification: '发送通知',
+  update_ticket_status: '更新工单状态',
+  get_user_history: '用户历史记录',
+};
+
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
@@ -27,13 +38,18 @@ function toast(message, type = 'info') {
   }, 3000);
 }
 
-async function api(method, path, data) {
+async function api(method, path, data, params) {
   const opts = {
     method,
     headers: { 'Content-Type': 'application/json' },
   };
   if (data) opts.body = JSON.stringify(data);
-  const res = await fetch(`${API_BASE}${path}`, opts);
+  let url = `${API_BASE}${path}`;
+  if (params) {
+    const qs = new URLSearchParams(params).toString();
+    url += (url.includes('?') ? '&' : '?') + qs;
+  }
+  const res = await fetch(url, opts);
   const json = await res.json();
   if (!res.ok || (json.code !== undefined && json.code !== 0)) {
     throw new Error(json.detail || json.message || `请求失败 (${res.status})`);
@@ -103,7 +119,7 @@ function handleWsMessage(data) {
     case 'tool_call_start':
       if (state.currentStreamMessage) {
         const content = state.currentStreamMessage.querySelector('.message-content');
-        content.textContent += `\n\n🔧 调用工具: ${data.tool_name}...`;
+        content.textContent += `\n\n🔧 调用工具: ${toolNameMap[data.tool] || data.tool}...`;
         scrollChatToBottom();
       }
       break;
@@ -129,7 +145,13 @@ function handleWsMessage(data) {
     case 'done':
       if (state.currentStreamMessage) {
         const content = state.currentStreamMessage.querySelector('.message-content');
-        content.textContent = data.reply || content.textContent;
+        if (data.reply) {
+          const currentText = content.textContent.replace(/\n\n🔧.*$/, '').trim();
+          const replyText = data.reply.replace(/^正在转接人工客服.*?\n\n/, '').trim();
+          if (replyText && replyText !== currentText) {
+            content.textContent = replyText;
+          }
+        }
         $('#responseTime').textContent = (data.execution_time_ms || '-') + 'ms';
         $('#currentIntent').textContent = data.intent || '-';
       }
@@ -283,12 +305,31 @@ async function loadTools() {
     const list = $('#toolList');
     list.innerHTML = tools.map(t => `
       <div class="tool-item">
-        <div class="tool-name">${t.name}</div>
+        <div class="tool-name">${toolNameMap[t.name] || t.name}</div>
         <div class="tool-desc">${t.description}</div>
       </div>
     `).join('');
   } catch (e) {
     $('#toolList').innerHTML = '<div class="empty">加载失败</div>';
+  }
+}
+
+async function deleteSession(sessionId, event) {
+  event.stopPropagation();
+  if (!confirm('确定删除该会话？此操作不可恢复。')) return;
+  try {
+    await api('DELETE', `/api/v1/chat/sessions/${sessionId}`);
+    if (state.sessionId === sessionId) {
+      state.sessionId = null;
+      $('#chatMessages').innerHTML = '';
+      $('#sessionId').textContent = '-';
+      state.messageCount = 0;
+      $('#messageCount').textContent = '0';
+    }
+    toast('会话已删除', 'success');
+    await loadSessions();
+  } catch (e) {
+    toast('删除失败', 'error');
   }
 }
 
@@ -307,13 +348,24 @@ async function loadSessions() {
       const item = document.createElement('div');
       item.className = 'session-item';
       item.dataset.session = s.id;
+      const title = s.title || '通用对话';
+      const time = s.updated_at ? new Date(s.updated_at).toLocaleString('zh-CN', { hour12: false }) : '';
+      const shortTitle = title.length > 15 ? title.substring(0, 15) + '…' : title;
       item.innerHTML = `
-        <div class="session-title">${s.last_intent || '通用对话'}</div>
-        <div class="session-time">${new Date(s.updated_at).toLocaleString('zh-CN')}</div>
+        <div class="session-info">
+          <div class="session-title">${shortTitle}</div>
+          <div class="session-time">${time}</div>
+        </div>
+        <button class="session-delete-btn" title="删除会话">✕</button>
       `;
       item.onclick = () => switchSession(s.id);
+      const delBtn = item.querySelector('.session-delete-btn');
+      delBtn.onclick = (e) => deleteSession(s.id, e);
       container.appendChild(item);
     });
+
+    const items = $$('.session-item');
+    items.forEach(i => i.classList.toggle('active', i.dataset.session === state.sessionId));
   } catch (e) {
     console.error('Load sessions error:', e);
   }
@@ -338,13 +390,21 @@ async function switchSession(sessionId) {
   } catch (e) {
     toast('加载历史失败', 'error');
   }
+
+  await loadSessions();
 }
 
-function newSession() {
-  state.sessionId = null;
+async function newSession() {
+  try {
+    const data = await api('POST', '/api/v1/chat/sessions', null, { user_id: state.user.id });
+    state.sessionId = data.id;
+  } catch (e) {
+    state.sessionId = null;
+  }
+
   state.messageCount = 0;
   $('#messageCount').textContent = '0';
-  $('#sessionId').textContent = '-';
+  $('#sessionId').textContent = state.sessionId ? state.sessionId.substring(0, 12) + '...' : '-';
   $('#currentIntent').textContent = '-';
   $('#responseTime').textContent = '-';
   $('#chatMessages').innerHTML = `
@@ -354,8 +414,7 @@ function newSession() {
       </div>
     </div>
   `;
-  const items = $$('.session-item');
-  items.forEach(i => i.classList.toggle('active', i.dataset.session === 'current'));
+  await loadSessions();
 }
 
 async function loadTickets() {
@@ -382,7 +441,12 @@ async function loadTickets() {
           <td><span class="badge badge-priority-${t.priority}">${priorityLabel(t.priority)}</span></td>
           <td><span class="badge badge-status-${t.status}">${statusLabel(t.status)}</span></td>
           <td style="font-size:12px;">${t.created_at ? new Date(t.created_at).toLocaleString('zh-CN') : '-'}</td>
-          <td><button class="btn-danger" onclick="deleteTicket('${t.ticket_id || t.id}')">删除</button></td>
+          <td>
+            <div class="table-actions">
+              <button class="btn-small" onclick="viewTicketDetail('${t.ticket_id || t.id}')">查看</button>
+              <button class="btn-danger btn-small" onclick="deleteTicket('${t.ticket_id || t.id}')">删除</button>
+            </div>
+          </td>
         </tr>
       `).join('');
     }
@@ -479,17 +543,22 @@ async function loadHandoffRequests() {
     if (items.length === 0) {
       list.innerHTML = '<div class="empty-state">暂无转人工请求</div>';
     } else {
-      list.innerHTML = items.map(r => `
+      list.innerHTML = items.map(r => {
+        const statusColor = { pending: 'badge-warning', assigned: 'badge-info', resolved: 'badge-success', closed: 'badge-default' }[r.status] || 'badge-default';
+        return `
         <div class="handoff-card">
           <div class="handoff-card-header">
             <div class="handoff-reason">${r.reason || '-'}</div>
-            <span class="badge badge-priority-${r.priority}">${priorityLabel(r.priority)}</span>
+            <span class="badge ${statusColor}">${statusLabel(r.status)}</span>
           </div>
           <div class="handoff-meta">
-            会话: ${r.session_id?.substring(0, 12) || '-'}... · ${statusLabel(r.status)}
+            会话: ${r.session_id?.substring(0, 12) || '-'}... · ${priorityLabel(r.priority)}
+          </div>
+          <div class="handoff-actions">
+            <button class="btn-small btn-primary" onclick="openHandoffModal('${r.request_id}')">处理</button>
           </div>
         </div>
-      `).join('');
+      `}).join('');
     }
   } catch (e) {
     $('#handoffList').innerHTML = '<div class="empty-state">加载失败</div>';
@@ -500,21 +569,36 @@ async function loadAgents() {
   try {
     const agents = await api('GET', '/api/v1/agents');
     const list = $('#agentsList');
-    if (agents.length === 0) {
-      list.innerHTML = '<div class="empty-state">暂无客服信息</div>';
-    } else {
-      list.innerHTML = agents.map(a => `
-        <div class="agent-card">
-          <div class="agent-card-header">
-            <div class="agent-name">${a.name}</div>
-            <span class="badge badge-status-${a.status}">${statusLabel(a.status)}</span>
-          </div>
-          <div class="agent-meta">ID: ${a.agent_id} · 技能: ${(a.skills || []).map(s => skillLabel(s)).join(', ') || '-'} · 负载: ${a.current_load}/${a.max_load}</div>
-        </div>
-      `).join('');
+
+    // 渲染客服列表
+    if (list) {
+      if (agents.length === 0) {
+        list.innerHTML = '<div class="empty-state">暂无客服信息</div>';
+      } else {
+        list.innerHTML = agents.map(a => {
+          const statusClass = a.status === 'online' ? 'badge-success' : a.status === 'busy' ? 'badge-warning' : 'badge-default';
+          return `
+            <div class="agent-card">
+              <div class="agent-card-header">
+                <div class="agent-name">${a.name}</div>
+                <span class="badge ${statusClass}">${statusLabel(a.status)}</span>
+              </div>
+              <div class="agent-meta">ID: ${a.agent_id} · 技能: ${(a.skills || []).map(s => skillLabel(s)).join(', ') || '-'} · 负载: ${a.current_load}/${a.max_load}</div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    // 填充转人工弹窗的客服选择
+    const agentSelect = $('#handoffAgentSelect');
+    if (agentSelect) {
+      agentSelect.innerHTML = '<option value="">-- 选择客服 --</option>' +
+        agents.filter(a => a.status === 'online' || a.status === 'busy')
+          .map(a => `<option value="${a.agent_id}">${a.name} (${a.current_load}/${a.max_load})</option>`).join('');
     }
   } catch (e) {
-    $('#agentsList').innerHTML = '<div class="empty-state">加载失败</div>';
+    if ($('#agentsList')) $('#agentsList').innerHTML = '<div class="empty-state">加载失败</div>';
   }
 }
 
@@ -644,33 +728,6 @@ function skillLabel(code) {
   return map[code] || code;
 }
 
-function showUserModal() {
-  $('#userIdInput').value = state.user.id;
-  $('#usernameInput').value = state.user.username;
-  $('#nicknameInput').value = state.user.nickname;
-  $('#userLevelInput').value = state.user.level;
-  $('#userModal').classList.add('active');
-}
-
-function hideUserModal() {
-  $('#userModal').classList.remove('active');
-}
-
-function saveUser() {
-  state.user.id = parseInt($('#userIdInput').value) || 1;
-  state.user.username = $('#usernameInput').value;
-  state.user.nickname = $('#nicknameInput').value;
-  state.user.level = $('#userLevelInput').value;
-
-  $('#username').textContent = state.user.username;
-  $('#userLevel').textContent = { normal: '普通用户', vip: 'VIP用户', enterprise: '企业用户' }[state.user.level];
-  $('#userAvatar').textContent = state.user.nickname.charAt(0).toUpperCase();
-
-  localStorage.setItem('cs_user', JSON.stringify(state.user));
-  hideUserModal();
-  toast('用户信息已保存', 'success');
-}
-
 function switchPage(page) {
   $$('.page').forEach(p => p.classList.remove('active'));
   $$('.nav-item').forEach(n => n.classList.remove('active'));
@@ -708,10 +765,11 @@ async function init() {
   }
 
   // 管理员初始化
+  const storedUserId = parseInt(localStorage.getItem('cs_user_id')) || 1;
   state.user = {
-    id: 1,
+    id: storedUserId,
     username: userName || 'admin',
-    nickname: userName || '管理员',
+    nickname: localStorage.getItem('cs_user_nickname') || userName || '管理员',
     level: 'enterprise',
   };
 
@@ -721,7 +779,8 @@ async function init() {
 
   initWebSocket();
   loadTools();
-  loadSessions();
+
+  await newSession();
 
   $('#chatInput').addEventListener('input', autoResize);
   $('#chatInput').addEventListener('keydown', (e) => {
@@ -741,6 +800,12 @@ async function init() {
   });
 
   $$('.quick-action').forEach(btn => {
+    btn.addEventListener('click', () => {
+      sendMessage(btn.dataset.msg);
+    });
+  });
+
+  $$('.tool-tag').forEach(btn => {
     btn.addEventListener('click', () => {
       sendMessage(btn.dataset.msg);
     });
@@ -777,6 +842,31 @@ async function init() {
   $('#ticketPriorityFilter').addEventListener('change', loadTickets);
 
   $('#refreshAnalyticsBtn').addEventListener('click', loadAnalytics);
+  $('#refreshHandoffBtn').addEventListener('click', () => { loadHandoffRequests(); loadAgents(); });
+
+  // 工单详情弹窗
+  $('#closeTicketDetail').addEventListener('click', () => $('#ticketDetailModal').classList.remove('active'));
+  $('#saveTicketDetailBtn').addEventListener('click', saveTicketDetail);
+  $('#ticketDetailModal').addEventListener('click', (e) => {
+    if (e.target.id === 'ticketDetailModal') $('#ticketDetailModal').classList.remove('active');
+  });
+
+  // 转人工处理弹窗
+  $('#closeHandoffModal').addEventListener('click', () => $('#handoffModal').classList.remove('active'));
+  $('#cancelHandoffBtn').addEventListener('click', () => $('#handoffModal').classList.remove('active'));
+  $('#resolveHandoffBtn').addEventListener('click', resolveHandoff);
+  $('#handoffModal').addEventListener('click', (e) => {
+    if (e.target.id === 'handoffModal') $('#handoffModal').classList.remove('active');
+  });
+
+  // 用户设置弹窗
+  $('#editUserBtn').addEventListener('click', showUserModal);
+  $('#closeUserModal').addEventListener('click', hideUserModal);
+  $('#cancelUserBtn').addEventListener('click', hideUserModal);
+  $('#saveUserBtn').addEventListener('click', saveUser);
+  $('#userModal').addEventListener('click', (e) => {
+    if (e.target.id === 'userModal') hideUserModal();
+  });
 
   $('#ticketModal').addEventListener('click', (e) => {
     if (e.target.id === 'ticketModal') hideTicketModal();
@@ -818,6 +908,7 @@ async function init() {
   $('#searchBtn').addEventListener('click', searchKnowledge);
   $('#seedDocsBtn').addEventListener('click', seedDefaultDocuments);
   $('#refreshKnowledgeBtn').addEventListener('click', loadKnowledgeStats);
+  $('#clearAllDocsBtn').addEventListener('click', clearAllDocuments);
 }
 
 // ===== 知识库管理 =====
@@ -839,8 +930,57 @@ async function loadKnowledgeStats() {
     $('#totalChunks').textContent = data.total_chunks || 0;
     $('#vectorBackend').textContent = data.backend === 'milvus' ? 'Milvus' : '内存';
     $('#vectorCount').textContent = data.vector_store_count || 0;
+    renderKnowledgeDocuments(data.documents || []);
   } catch (e) {
     console.error('加载知识库统计失败:', e);
+  }
+}
+
+function renderKnowledgeDocuments(documents) {
+  const container = $('#docsList');
+  if (!documents.length) {
+    container.innerHTML = '<div class="empty-state">暂无文档，点击上方"导入示例"或"上传文件"添加</div>';
+    return;
+  }
+
+  container.innerHTML = documents.map(d => {
+    const catLabel = { policy: '政策', help: '帮助', faq: 'FAQ', product: '产品', other: '其他' }[d.category] || d.category || '-';
+    const date = d.created_at ? new Date(d.created_at).toLocaleString('zh-CN', { hour12: false }) : '';
+    return `
+      <div class="doc-item">
+        <div class="doc-info">
+          <div class="doc-title">${d.title || '无标题'}</div>
+          <div class="doc-meta">
+            <span class="badge badge-category">${catLabel}</span>
+            <span>${d.chunks_count || 0} 分块</span>
+            <span>${date}</span>
+          </div>
+        </div>
+        <button class="btn-danger btn-small" onclick="deleteKnowledgeDocument('${d.id}')">删除</button>
+      </div>
+    `;
+  }).join('');
+}
+
+async function deleteKnowledgeDocument(id) {
+  if (!confirm('确定删除该文档？此操作不可恢复。')) return;
+  try {
+    await api('DELETE', `/api/v1/knowledge/documents/${id}`);
+    toast('文档已删除', 'success');
+    loadKnowledgeStats();
+  } catch (e) {
+    toast('删除失败: ' + e.message, 'error');
+  }
+}
+
+async function clearAllDocuments() {
+  if (!confirm('确定清空所有文档？此操作不可恢复！')) return;
+  try {
+    await api('DELETE', '/api/v1/knowledge/documents');
+    toast('已清空所有文档', 'success');
+    loadKnowledgeStats();
+  } catch (e) {
+    toast('清空失败: ' + e.message, 'error');
   }
 }
 
@@ -983,6 +1123,123 @@ async function seedDefaultDocuments() {
   } catch (e) {
     toast('导入失败: ' + e.message, 'error');
   }
+}
+
+let currentTicketId = null;
+let currentHandoffId = null;
+
+async function viewTicketDetail(ticketId) {
+  try {
+    const t = await api('GET', `/api/v1/tickets/${ticketId}`);
+    currentTicketId = ticketId;
+
+    const body = $('#ticketDetailBody');
+    body.innerHTML = `
+      <div class="detail-row"><span class="detail-label">工单ID:</span> <span class="detail-value">${ticketId}</span></div>
+      <div class="detail-row"><span class="detail-label">分类:</span> <span class="detail-value">${t.category || '-'}</span></div>
+      <div class="detail-row"><span class="detail-label">优先级:</span> <span class="badge badge-priority-${t.priority}">${priorityLabel(t.priority)}</span></div>
+      <div class="detail-row"><span class="detail-label">状态:</span> <span class="badge badge-status-${t.status}">${statusLabel(t.status)}</span></div>
+      <div class="detail-row"><span class="detail-label">创建时间:</span> <span class="detail-value">${t.created_at ? new Date(t.created_at).toLocaleString('zh-CN') : '-'}</span></div>
+      <div class="detail-row"><span class="detail-label">关联会话:</span> <span class="detail-value">${(t.session_id || '-').substring(0, 20)}</span></div>
+      <div class="detail-row"><span class="detail-label">内容:</span></div>
+      <div class="detail-content">${t.content || '无'}</div>
+      ${t.resolution ? `<div class="detail-row"><span class="detail-label">处理结果:</span></div><div class="detail-content">${t.resolution}</div>` : ''}
+    `;
+
+    $('#ticketDetailStatus').value = t.status || 'pending';
+    $('#ticketDetailPriority').value = t.priority || 'medium';
+    $('#ticketDetailModal').classList.add('active');
+  } catch (e) {
+    toast('加载工单详情失败', 'error');
+  }
+}
+
+async function saveTicketDetail() {
+  if (!currentTicketId) return;
+  const status = $('#ticketDetailStatus').value;
+  const priority = $('#ticketDetailPriority').value;
+
+  try {
+    await api('PUT', `/api/v1/tickets/${currentTicketId}`, { status, priority });
+    toast('工单已更新', 'success');
+    $('#ticketDetailModal').classList.remove('active');
+    loadTickets();
+  } catch (e) {
+    toast('更新失败: ' + e.message, 'error');
+  }
+}
+
+async function openHandoffModal(requestId) {
+  currentHandoffId = requestId;
+  $('#handoffResolution').value = '';
+
+  try {
+    const agents = await api('GET', '/api/v1/agents');
+    const select = $('#handoffAgentSelect');
+    select.innerHTML = '<option value="">-- 选择客服 --</option>' +
+      (agents || []).map(a => `<option value="${a.agent_id}">${a.name} (${statusLabel(a.status)})</option>`).join('');
+  } catch (e) {
+    // agents might be embedded in object
+  }
+
+  $('#handoffModal').classList.add('active');
+}
+
+async function resolveHandoff() {
+  if (!currentHandoffId) return;
+  const agentId = $('#handoffAgentSelect').value;
+  const resolution = $('#handoffResolution').value.trim();
+
+  if (!resolution) {
+    toast('请填写处理结果', 'warning');
+    return;
+  }
+
+  try {
+    if (agentId) {
+      await api('POST', `/api/v1/handoff/${currentHandoffId}/assign`, null, { agent_id: agentId });
+    }
+    await api('POST', `/api/v1/handoff/${currentHandoffId}/resolve`, null, {
+      resolution,
+      agent_id: agentId || undefined,
+    });
+    toast('处理成功', 'success');
+    $('#handoffModal').classList.remove('active');
+    loadHandoffRequests();
+    loadAgents();
+  } catch (e) {
+    toast('处理失败: ' + e.message, 'error');
+  }
+}
+
+function showUserModal() {
+  $('#userIdInput').value = state.user.id;
+  $('#usernameInput').value = state.user.username;
+  $('#nicknameInput').value = state.user.nickname;
+  $('#userLevelInput').value = state.user.level;
+  $('#userModal').classList.add('active');
+}
+
+function hideUserModal() {
+  $('#userModal').classList.remove('active');
+}
+
+function saveUser() {
+  state.user.id = parseInt($('#userIdInput').value) || 1;
+  state.user.username = $('#usernameInput').value;
+  state.user.nickname = $('#nicknameInput').value;
+  state.user.level = $('#userLevelInput').value;
+
+  $('#username').textContent = state.user.username;
+  $('#userLevel').textContent = { normal: '普通用户', vip: 'VIP用户', enterprise: '企业用户' }[state.user.level];
+  $('#userAvatar').textContent = state.user.nickname.charAt(0).toUpperCase();
+
+  localStorage.setItem('cs_user_id', String(state.user.id));
+  localStorage.setItem('cs_user_name', state.user.username);
+  localStorage.setItem('cs_user_nickname', state.user.nickname);
+
+  hideUserModal();
+  toast('用户信息已保存', 'success');
 }
 
 document.addEventListener('DOMContentLoaded', init);

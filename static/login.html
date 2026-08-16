@@ -240,10 +240,11 @@ document.querySelectorAll('.demo-fill-btn').forEach(btn => {
   });
 });
 
-document.getElementById('loginBtn').addEventListener('click', () => {
+document.getElementById('loginBtn').addEventListener('click', async () => {
   const username = document.getElementById('username').value.trim();
   const password = document.getElementById('password').value.trim();
   const errorMsg = document.getElementById('errorMsg');
+  const btn = document.getElementById('loginBtn');
 
   errorMsg.classList.remove('show');
 
@@ -259,21 +260,41 @@ document.getElementById('loginBtn').addEventListener('click', () => {
     return;
   }
 
-  // 简单验证
   if (selectedRole === 'admin' && password !== 'admin123') {
     errorMsg.textContent = '管理员密码错误（演示密码: admin123）';
     errorMsg.classList.add('show');
     return;
   }
 
-  // 保存登录信息
-  localStorage.setItem('cs_user_role', selectedRole);
-  localStorage.setItem('cs_user_name', username);
-  localStorage.setItem('cs_user_id', selectedRole === 'admin' ? '999' : '1');
+  btn.disabled = true;
+  btn.textContent = '登录中...';
 
-  // 跳转到对应页面
-  const target = selectedRole === 'admin' ? '/admin.html' : '/user.html';
-  window.location.href = target;
+  try {
+    const resp = await fetch(`/api/v1/users/login?username=${encodeURIComponent(username)}&role=${selectedRole}`, {
+      method: 'POST',
+    });
+    const result = await resp.json();
+
+    if (result.code === 0) {
+      localStorage.setItem('cs_user_role', selectedRole);
+      localStorage.setItem('cs_user_name', username);
+      localStorage.setItem('cs_user_id', String(result.data.id));
+      localStorage.setItem('cs_user_nickname', result.data.nickname || username);
+
+      const target = selectedRole === 'admin' ? '/admin.html' : '/user.html';
+      window.location.href = target;
+    } else {
+      errorMsg.textContent = result.message || '登录失败';
+      errorMsg.classList.add('show');
+      btn.disabled = false;
+      btn.textContent = '登 录';
+    }
+  } catch (e) {
+    errorMsg.textContent = '网络错误，请重试';
+    errorMsg.classList.add('show');
+    btn.disabled = false;
+    btn.textContent = '登 录';
+  }
 });
 
 // 回车键登录

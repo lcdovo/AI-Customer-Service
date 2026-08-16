@@ -2,7 +2,7 @@ import json
 import time
 import uuid
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect
@@ -22,6 +22,146 @@ from app.utils.tracking import structured_logger, generate_trace_id
 router = APIRouter(prefix="/api/v1/chat", tags=["对话管理"])
 
 agent_graph = AgentGraph()
+
+INTENT_LABELS = {
+    "query_order": "订单查询",
+    "refund": "退换货",
+    "complaint": "投诉",
+    "technical": "技术咨询",
+    "promotion": "活动咨询",
+    "human": "转人工",
+    "general": "通用对话",
+}
+
+
+def _intent_label(intent):
+    if not intent:
+        return "通用对话"
+    return INTENT_LABELS.get(intent, intent)
+
+
+def _fmt_utc(dt):
+    if dt is None:
+        return None
+    return dt.replace(tzinfo=timezone.utc).isoformat()
+
+
+@router.post("/sessions", response_model=APIResponse)
+async def create_session(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """创建新会话"""
+    user = await db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    session_id = str(uuid.uuid4())
+    session = Session(
+        id=session_id,
+        user_id=user_id,
+        status=SessionStatus.ACTIVE,
+    )
+    db.add(session)
+    await db.commit()
+
+    return APIResponse(
+        code=0,
+        message="会话创建成功",
+        data={
+            "id": session_id,
+            "status": SessionStatus.ACTIVE.value,
+            "message_count": 0,
+            "last_intent": None,
+            "updated_at": _fmt_utc(session.updated_at),
+        },
+    )
+
+
+@router.patch("/sessions/{session_id}/close", response_model=APIResponse)
+async def close_session(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """关闭会话"""
+    session = await db.get(Session, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    session.status = SessionStatus.CLOSED
+    session.closed_at = datetime.utcnow()
+    await db.commit()
+
+    return APIResponse(
+        code=0,
+        message="会话已关闭",
+        data={"id": session_id, "status": SessionStatus.CLOSED.value},
+    )
+
+
+@router.delete("/sessions/{session_id}", response_model=APIResponse)
+async def delete_session(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """删除会话（级联删除消息）"""
+    session = await db.get(Session, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    await db.delete(session)
+    await db.commit()
+
+    return APIResponse(
+        code=0,
+        message="会话已删除",
+        data={"id": session_id},
+    )
+
+
+@router.get("/sessions/{user_id}", response_model=APIResponse)
+async def get_user_sessions(
+    user_id: int,
+    page: int = 1,
+    page_size: int = 20,
+    include_closed: bool = True,
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(Session).where(Session.user_id == user_id)
+    if not include_closed:
+        query = query.where(Session.status == SessionStatus.ACTIVE)
+    query = query.order_by(Session.updated_at.desc())
+    query = query.offset((page - 1) * page_size).limit(page_size)
+    result = await db.execute(query)
+    sessions = result.scalars().all()
+
+    data = []
+    for s in sessions:
+        last_msg_query = select(Message).where(Message.session_id == s.id)
+        last_msg_query = last_msg_query.order_by(Message.created_at.desc()).limit(1)
+        last_msg_result = await db.execute(last_msg_query)
+        last_msg = last_msg_result.scalar_one_or_none()
+
+        title = _intent_label(s.last_intent)
+        preview = last_msg.content[:50] if last_msg else ""
+        if not s.last_intent and last_msg:
+            title = last_msg.content[:20] or "通用对话"
+
+        data.append({
+            "id": s.id,
+            "status": s.status.value,
+            "message_count": s.message_count,
+            "last_intent": s.last_intent,
+            "title": title,
+            "preview": preview,
+            "updated_at": _fmt_utc(s.updated_at),
+        })
+
+    return APIResponse(
+        code=0,
+        message="获取成功",
+        data=data,
+    )
 
 
 @router.post("/send", response_model=ChatResponse)
@@ -149,43 +289,11 @@ async def get_chat_history(
                     "content": m.content,
                     "token_count": m.token_count,
                     "response_time_ms": m.response_time_ms,
-                    "created_at": m.created_at.isoformat() if m.created_at else None,
+                    "created_at": _fmt_utc(m.created_at),
                 }
                 for m in reversed(messages)
             ],
         },
-    )
-
-
-@router.get("/sessions/{user_id}", response_model=APIResponse)
-async def get_user_sessions(
-    user_id: int,
-    page: int = 1,
-    page_size: int = 10,
-    db: AsyncSession = Depends(get_db),
-):
-    query = select(Session).where(
-        Session.user_id == user_id,
-        Session.status == SessionStatus.ACTIVE,
-    )
-    query = query.order_by(Session.updated_at.desc())
-    query = query.offset((page - 1) * page_size).limit(page_size)
-    result = await db.execute(query)
-    sessions = result.scalars().all()
-
-    return APIResponse(
-        code=0,
-        message="获取成功",
-        data=[
-            {
-                "id": s.id,
-                "status": s.status.value,
-                "message_count": s.message_count,
-                "last_intent": s.last_intent,
-                "updated_at": s.updated_at.isoformat() if s.updated_at else None,
-            }
-            for s in sessions
-        ],
     )
 
 

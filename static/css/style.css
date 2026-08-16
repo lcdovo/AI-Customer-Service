@@ -283,6 +283,10 @@ body {
   cursor: pointer;
   margin-bottom: 4px;
   transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .session-item:hover {
@@ -291,6 +295,11 @@ body {
 
 .session-item.active {
   background: linear-gradient(135deg, #eef2ff, #e0e7ff);
+}
+
+.session-info {
+  flex: 1;
+  min-width: 0;
 }
 
 .session-title {
@@ -305,6 +314,32 @@ body {
   font-size: 11px;
   color: var(--text-muted);
   margin-top: 2px;
+}
+
+.session-delete-btn {
+  opacity: 0;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.session-item:hover .session-delete-btn {
+  opacity: 1;
+}
+
+.session-delete-btn:hover {
+  background: #fee2e2;
+  color: #ef4444;
 }
 
 /* 对话区域 */
@@ -447,23 +482,34 @@ body {
   margin-bottom: 0;
 }
 
-.quick-actions {
+.quick-actions-bar {
   display: flex;
-  flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
-  justify-content: center;
+  padding: 10px 20px;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
-.quick-action {
-  padding: 8px 14px;
-  background: var(--bg-card);
+.quick-actions-bar .quick-action {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 20px;
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
   transition: all 0.2s;
   color: var(--text);
+}
+
+.quick-actions-bar .quick-action:hover {
+  background: linear-gradient(135deg, #eef2ff, #e0e7ff);
+  border-color: #4f46e5;
+  color: #4f46e5;
 }
 
 .quick-action:hover {
@@ -557,6 +603,15 @@ body {
   background: #eef2ff;
   color: var(--primary);
   border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tool-tag:hover {
+  background: var(--primary);
+  color: white;
+  transform: translateY(-1px);
 }
 
 .input-wrapper {
@@ -1617,3 +1672,114 @@ body {
 .badge-category-faq { background: #e0e7ff; color: #4f46e5; }
 .badge-category-product { background: #d1fae5; color: #059669; }
 .badge-category-other { background: #f3f4f6; color: #6b7280; }
+
+/* ===== 侧边栏操作 ===== */
+.sidebar-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.btn-small {
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-small:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.btn-primary.btn-small {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+.btn-primary.btn-small:hover {
+  background: var(--primary-dark);
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: white;
+  border: none;
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+
+.btn-danger:hover {
+  background: #dc2626;
+}
+
+.btn-danger.btn-small {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+/* ===== 表格操作 ===== */
+.table-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* ===== 弹窗扩展 ===== */
+.modal-lg {
+  max-width: 700px;
+}
+
+.detail-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.detail-row:last-of-type {
+  border-bottom: none;
+}
+
+.detail-label {
+  font-weight: 600;
+  color: var(--text-secondary);
+  min-width: 80px;
+}
+
+.detail-value {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.detail-content {
+  background: var(--bg);
+  padding: 12px;
+  border-radius: var(--radius);
+  margin: 4px 0 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* ===== badge状态颜色 ===== */
+.badge-warning { background: #fef3c7; color: #d97706; }
+.badge-info { background: #dbeafe; color: #2563eb; }
+.badge-success { background: #d1fae5; color: #059669; }
+.badge-default { background: #f3f4f6; color: #6b7280; }
+
+/* ===== 转人工卡片操作 ===== */
+.handoff-actions {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+}

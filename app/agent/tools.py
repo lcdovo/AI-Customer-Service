@@ -482,37 +482,66 @@ class EscalateToHumanTool(BaseTool):
         {"name": "priority", "type": "string", "description": "优先级", "required": False,
          "enum": ["normal", "urgent"], "default": "normal"},
         {"name": "context", "type": "string", "description": "上下文信息（可选）", "required": False, "default": ""},
+        {"name": "user_id", "type": "integer", "description": "用户ID", "required": False, "default": 0},
+        {"name": "session_id", "type": "string", "description": "会话ID", "required": False, "default": ""},
     ]
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
         reason = kwargs.get("reason", "")
         priority = kwargs.get("priority", "normal")
         context = kwargs.get("context", "")
+        user_id = kwargs.get("user_id", 0)
+        session_id = kwargs.get("session_id", "")
 
         if not reason:
             return {"success": False, "error": "请提供转接原因", "hint": "请简要说明需要人工客服处理的原因"}
 
-        priority_config = {
-            "normal": {"wait_time": "3-5分钟", "position": 5, "label": "普通"},
-            "urgent": {"wait_time": "立即", "position": 1, "label": "紧急"},
-        }
-        config = priority_config.get(priority, priority_config["normal"])
-
-        return {
-            "success": True,
-            "data": {
-                "escalation_id": str(uuid.uuid4()),
-                "status": "queued",
-                "priority": priority,
-                "priority_label": config["label"],
-                "queue_position": config["position"],
-                "estimated_wait_time": config["wait_time"],
-                "reason": reason,
-                "context": context,
-                "message": f"正在为您转接人工客服（{config['label']}优先级），预计等待{config['wait_time']}，请稍候...",
-                "callback": "如等待时间过长，系统将自动回拨您的预留手机号",
-            },
-        }
+        try:
+            from app.services.collaboration import get_collaboration_service
+            collaboration_service = get_collaboration_service()
+            
+            result = collaboration_service.execute_handoff(
+                user_id=user_id,
+                session_id=session_id,
+                reason=reason,
+                priority=priority,
+                context={"context": context} if context else None,
+            )
+            
+            return {
+                "success": True,
+                "data": {
+                    "escalation_id": result.get("request_id", str(uuid.uuid4())),
+                    "status": result.get("status", "pending"),
+                    "priority": priority,
+                    "reason": reason,
+                    "context": context,
+                    "message": result.get("message", "正在为您转接人工客服，请稍候..."),
+                    "sla_deadline": result.get("sla_deadline", ""),
+                    "assigned_to": result.get("assigned_to"),
+                },
+            }
+        except Exception as e:
+            logger.error(f"创建转人工请求失败: {e}")
+            priority_config = {
+                "normal": {"wait_time": "3-5分钟", "position": 5, "label": "普通"},
+                "urgent": {"wait_time": "立即", "position": 1, "label": "紧急"},
+            }
+            config = priority_config.get(priority, priority_config["normal"])
+            return {
+                "success": True,
+                "data": {
+                    "escalation_id": str(uuid.uuid4()),
+                    "status": "queued",
+                    "priority": priority,
+                    "priority_label": config["label"],
+                    "queue_position": config["position"],
+                    "estimated_wait_time": config["wait_time"],
+                    "reason": reason,
+                    "context": context,
+                    "message": f"正在为您转接人工客服（{config['label']}优先级），预计等待{config['wait_time']}，请稍候...",
+                },
+            }
 
 
 class SendNotificationTool(BaseTool):

@@ -34,11 +34,34 @@
     cursor: pointer;
     transition: all 0.2s;
     margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
   }
   .user-session-item:hover { background: rgba(255,255,255,0.1); }
   .user-session-item.active { background: rgba(255,255,255,0.15); }
-  .user-session-title { font-size: 13px; color: white; margin-bottom: 4px; }
+  .user-session-info { flex: 1; min-width: 0; }
+  .user-session-title { font-size: 13px; color: white; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .user-session-time { font-size: 11px; color: #818cf8; }
+  .user-session-delete {
+    opacity: 0;
+    width: 22px;
+    height: 22px;
+    border: none;
+    background: transparent;
+    color: rgba(255,255,255,0.5);
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+  .user-session-item:hover .user-session-delete { opacity: 1; }
+  .user-session-delete:hover { background: rgba(239,68,68,0.2); color: #ef4444; }
   .user-new-session-btn {
     margin: 10px;
     padding: 10px;
@@ -106,15 +129,32 @@
     overflow-y: auto;
     padding: 24px;
   }
-  .msg { margin-bottom: 16px; display: flex; }
+  .msg { margin-bottom: 16px; display: flex; align-items: flex-end; gap: 8px; }
   .msg.user { justify-content: flex-end; }
   .msg.agent { justify-content: flex-start; }
+  .msg-avatar {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .msg.user .msg-avatar {
+    background: linear-gradient(135deg, #6366f1, #4f46e5);
+    color: white;
+    order: 2;
+  }
+  .msg.agent .msg-avatar {
+    background: linear-gradient(135deg, #a78bfa, #8b5cf6);
+    color: white;
+  }
+  .msg .bubble-wrap { display: flex; flex-direction: column; max-width: 70%; }
   .msg .bubble {
-    max-width: 70%;
     padding: 12px 16px;
     border-radius: 12px;
     font-size: 14px;
     line-height: 1.6;
+    word-break: break-word;
   }
   .msg.user .bubble {
     background: #4f46e5;
@@ -140,8 +180,17 @@
   }
   @keyframes blink { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }
 
-  .quick-actions { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
-  .quick-actions .qa-btn {
+  .quick-actions-bar {
+    display: flex;
+    gap: 8px;
+    padding: 10px 24px;
+    background: white;
+    border-top: 1px solid #e5e7eb;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  .quick-actions-bar .qa-btn {
+    flex-shrink: 0;
     padding: 6px 12px;
     background: white;
     border: 1px solid #e5e7eb;
@@ -151,7 +200,7 @@
     cursor: pointer;
     transition: all 0.2s;
   }
-  .quick-actions .qa-btn:hover { background: #f0f2ff; border-color: #4f46e5; }
+  .quick-actions-bar .qa-btn:hover { background: #f0f2ff; border-color: #4f46e5; }
 
   .user-chat-input {
     padding: 16px 24px;
@@ -252,17 +301,18 @@
     <div class="user-chat-messages" id="chatMessages">
       <div class="msg system">
         <div class="bubble">
-          <p>👋 你好！我是智能客服小助手，可以帮你处理：</p>
-          <div class="quick-actions">
-            <button class="qa-btn" data-msg="我的订单到哪了">📦 订单查询</button>
-            <button class="qa-btn" data-msg="我要退货/退款">↩️ 退换货</button>
-            <button class="qa-btn" data-msg="修改收货地址">✏️ 修改信息</button>
-            <button class="qa-btn" data-msg="投诉">📢 投诉建议</button>
-            <button class="qa-btn" data-msg="我要转人工客服">👤 转人工</button>
-            <button class="qa-btn" data-msg="退换货政策是什么">❓ 政策咨询</button>
-          </div>
+          <p>👋 你好！我是智能客服小助手，请问有什么可以帮您？</p>
         </div>
       </div>
+    </div>
+
+    <div class="quick-actions-bar" id="quickActionsBar">
+      <button class="qa-btn" data-msg="我的订单到哪了">📦 订单查询</button>
+      <button class="qa-btn" data-msg="我要退货/退款">↩️ 退换货</button>
+      <button class="qa-btn" data-msg="修改收货地址">✏️ 修改信息</button>
+      <button class="qa-btn" data-msg="投诉">📢 投诉建议</button>
+      <button class="qa-btn" data-msg="我要转人工客服">👤 转人工</button>
+      <button class="qa-btn" data-msg="退换货政策是什么">❓ 政策咨询</button>
     </div>
 
     <div class="user-chat-input">
@@ -284,9 +334,125 @@ const state = {
   wsConnected: false,
   currentStreamEl: null,
   intent: null,
+  sessions: [],
 };
 
 const $ = sel => document.querySelector(sel);
+
+async function api(method, path, data, params) {
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+  };
+  if (data) opts.body = JSON.stringify(data);
+  let url = path;
+  if (params) {
+    const qs = new URLSearchParams(params).toString();
+    url += (url.includes('?') ? '&' : '?') + qs;
+  }
+  const res = await fetch(url, opts);
+  const json = await res.json();
+  if (!res.ok || (json.code !== undefined && json.code !== 0)) {
+    throw new Error(json.detail || json.message || '请求失败');
+  }
+  return json.data !== undefined ? json.data : json;
+}
+
+async function deleteSession(sessionId, event) {
+  event.stopPropagation();
+  if (!confirm('确定删除该会话？此操作不可恢复。')) return;
+  try {
+    await api('DELETE', `/api/v1/chat/sessions/${sessionId}`);
+    if (state.sessionId === sessionId) {
+      state.sessionId = null;
+      state.intent = null;
+      $('#chatMessages').innerHTML = '';
+    }
+    await loadSessions();
+  } catch (e) {
+    console.error('Delete session error:', e);
+  }
+}
+
+async function loadSessions() {
+  try {
+    const sessions = await api('GET', `/api/v1/chat/sessions/${state.userId}`);
+    state.sessions = sessions || [];
+    const container = $('#sessionList');
+    container.innerHTML = '';
+
+    if (!sessions || sessions.length === 0) {
+      container.innerHTML = '<div class="user-session-item active"><div class="user-session-title">新对话</div><div class="user-session-time">点击开始聊天</div></div>';
+      return;
+    }
+
+    sessions.forEach(s => {
+      const item = document.createElement('div');
+      item.className = 'user-session-item';
+      item.dataset.session = s.id;
+      const title = s.title || '通用对话';
+      const time = s.updated_at ? new Date(s.updated_at).toLocaleString('zh-CN', { hour12: false }) : '';
+      const shortTitle = title.length > 15 ? title.substring(0, 15) + '…' : title;
+      item.innerHTML = `
+        <div class="user-session-info">
+          <div class="user-session-title">${shortTitle}</div>
+          <div class="user-session-time">${time}</div>
+        </div>
+        <button class="user-session-delete" title="删除">✕</button>
+      `;
+      item.onclick = () => switchSession(s.id);
+      const delBtn = item.querySelector('.user-session-delete');
+      delBtn.onclick = (e) => deleteSession(s.id, e);
+      container.appendChild(item);
+    });
+
+    const items = document.querySelectorAll('.user-session-item');
+    items.forEach(i => i.classList.toggle('active', i.dataset.session === state.sessionId));
+  } catch (e) {
+    console.error('Load sessions error:', e);
+  }
+}
+
+async function switchSession(sessionId) {
+  state.sessionId = sessionId;
+  const items = document.querySelectorAll('.user-session-item');
+  items.forEach(i => i.classList.toggle('active', i.dataset.session === sessionId));
+
+  try {
+    const data = await api('GET', `/api/v1/chat/history/${sessionId}`);
+    $('#chatMessages').innerHTML = '';
+    data.messages.forEach(m => {
+      if (m.role === 'user') {
+        addMessage('user', m.content);
+      } else if (m.role === 'assistant') {
+        addMessage('agent', m.content);
+      }
+    });
+  } catch (e) {
+    console.error('Load history error:', e);
+  }
+  await loadSessions();
+}
+
+async function newSession() {
+  try {
+    const data = await api('POST', '/api/v1/chat/sessions', null, { user_id: state.userId });
+    state.sessionId = data.id;
+  } catch (e) {
+    state.sessionId = null;
+  }
+
+  state.intent = null;
+  $('#chatMessages').innerHTML = `
+    <div class="msg system">
+      <div class="bubble">
+        <p>✨ 新对话开始，请问有什么可以帮您？</p>
+      </div>
+    </div>
+  `;
+
+  await loadSessions();
+}
 
 function updateWsStatus(status, text) {
   const dot = $('#wsDot');
@@ -338,7 +504,13 @@ function handleMessage(data) {
     case 'done':
       if (state.currentStreamEl) {
         const content = state.currentStreamEl.querySelector('.bubble');
-        content.textContent = data.reply || content.textContent;
+        if (data.reply) {
+          const currentText = content.textContent.trim();
+          const replyText = data.reply.trim();
+          if (replyText && replyText !== currentText && !currentText.includes('🔧')) {
+            content.textContent = replyText;
+          }
+        }
         scrollBottom();
       }
       state.currentStreamEl = null;
@@ -385,13 +557,30 @@ function hideToolCall() {
 function addMessage(role, content) {
   const div = document.createElement('div');
   div.className = `msg ${role}`;
+
+  const avatar = document.createElement('div');
+  avatar.className = 'msg-avatar';
+  avatar.textContent = role === 'user' ? '😊' : '🤖';
+
+  const bubbleWrap = document.createElement('div');
+  bubbleWrap.className = 'bubble-wrap';
+
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
   bubble.textContent = content;
-  div.appendChild(bubble);
+  bubbleWrap.appendChild(bubble);
+
+  if (role === 'user') {
+    div.appendChild(bubbleWrap);
+    div.appendChild(avatar);
+  } else {
+    div.appendChild(avatar);
+    div.appendChild(bubbleWrap);
+  }
+
   $('#chatMessages').appendChild(div);
   scrollBottom();
-  return div;
+  return bubbleWrap;
 }
 
 function scrollBottom() {
@@ -432,13 +621,13 @@ const intentMap = {
 
 const toolNameMap = {
   query_order: '📦 订单查询',
-  create_ticket: '📋 创建工单',
-  apply_refund: '↩️ 申请退款',
-  apply_exchange: '🔄 申请换货',
-  update_address: '📍 更新地址',
-  request_handoff: '👤 转人工',
-  submit_complaint: '📢 提交投诉',
-  search_knowledge: '🔍 知识库搜索',
+  create_ticket: '📋 工单创建',
+  apply_refund: '↩️ 退换货申请',
+  search_kb: '🔍 知识库搜索',
+  escalate_to_human: '👤 转人工客服',
+  send_notification: '📨 发送通知',
+  update_ticket_status: '🔄 更新工单状态',
+  get_user_history: '📜 用户历史记录',
 };
 
 function renderUserInfo(name) {
@@ -447,31 +636,21 @@ function renderUserInfo(name) {
 }
 
 // 初始化
-document.addEventListener('DOMContentLoaded', () => {
-  const userName = localStorage.getItem('cs_user_name') || '用户';
+document.addEventListener('DOMContentLoaded', async () => {
+  const userName = localStorage.getItem('cs_user_nickname') || localStorage.getItem('cs_user_name') || '用户';
   const userId = localStorage.getItem('cs_user_id');
 
   if (!userId) {
-    // 尝试通过后端获取用户信息
-    fetch('/api/v1/users/')
-      .then(r => r.json())
-      .then(data => {
-        if (data && data.length > 0) {
-          state.userId = data[0].id;
-          localStorage.setItem('cs_user_id', String(data[0].id));
-          renderUserInfo(data[0].username || userName);
-        }
-      })
-      .catch(() => {
-        localStorage.setItem('cs_user_id', '1');
-        renderUserInfo(userName);
-      });
-  } else {
-    state.userId = parseInt(userId) || 1;
-    renderUserInfo(userName);
+    window.location.href = '/login.html';
+    return;
   }
 
+  state.userId = parseInt(userId) || 1;
+  renderUserInfo(userName);
+
   initWebSocket();
+
+  await newSession();
 
   $('#chatInput').addEventListener('input', autoResize);
   $('#chatInput').addEventListener('keydown', (e) => {
@@ -494,28 +673,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.addEventListener('click', () => sendMessage(btn.dataset.msg));
   });
 
-  $('#newSessionBtn').addEventListener('click', () => {
-    state.sessionId = null;
-    state.intent = null;
-    $('#chatMessages').innerHTML = `
-      <div class="msg system">
-        <div class="bubble">
-          <p>✨ 新对话开始，请问有什么可以帮您？</p>
-          <div class="quick-actions">
-            <button class="qa-btn" data-msg="我的订单到哪了">📦 订单查询</button>
-            <button class="qa-btn" data-msg="我要退货/退款">↩️ 退换货</button>
-            <button class="qa-btn" data-msg="修改收货地址">✏️ 修改信息</button>
-            <button class="qa-btn" data-msg="投诉">📢 投诉建议</button>
-            <button class="qa-btn" data-msg="我要转人工客服">👤 转人工</button>
-            <button class="qa-btn" data-msg="退换货政策是什么">❓ 政策咨询</button>
-          </div>
-        </div>
-      </div>
-    `;
-    document.querySelectorAll('.qa-btn').forEach(btn => {
-      btn.addEventListener('click', () => sendMessage(btn.dataset.msg));
-    });
-  });
+  $('#newSessionBtn').addEventListener('click', newSession);
 
   $('#logoutBtn').addEventListener('click', () => {
     if (confirm('确定退出登录？')) {

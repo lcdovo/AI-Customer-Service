@@ -50,7 +50,10 @@
           <div class="user-level" id="userLevel">管理员</div>
         </div>
       </div>
-      <button class="logout-admin-btn" id="logoutAdminBtn">🚪 退出登录</button>
+      <div class="sidebar-actions">
+        <button class="btn-small" id="editUserBtn">⚙️ 设置</button>
+        <button class="logout-admin-btn" id="logoutAdminBtn">🚪 退出</button>
+      </div>
     </div>
   </aside>
 
@@ -90,28 +93,21 @@
           <div class="chat-messages" id="chatMessages">
             <div class="message system">
               <div class="message-content">
-                <p>👋 你好！我是智能客服小助手，可以帮你处理：</p>
-                <div class="quick-actions">
-                  <button class="quick-action" data-msg="我的订单到哪了">📦 订单查询</button>
-                  <button class="quick-action" data-msg="我要退货/退款">↩️ 退换货</button>
-                  <button class="quick-action" data-msg="修改收货地址">✏️ 修改信息</button>
-                  <button class="quick-action" data-msg="投诉">📢 投诉建议</button>
-                  <button class="quick-action" data-msg="我要转人工客服">👤 转人工</button>
-                  <button class="quick-action" data-msg="退换货政策是什么">❓ 政策咨询</button>
-                </div>
+                <p>👋 你好！我是智能客服小助手，请问有什么可以帮您？</p>
               </div>
             </div>
           </div>
 
+          <div class="quick-actions-bar" id="quickActionsBar">
+            <button class="quick-action" data-msg="我的订单到哪了">📦 订单查询</button>
+            <button class="quick-action" data-msg="我要退货/退款">↩️ 退换货</button>
+            <button class="quick-action" data-msg="修改收货地址">✏️ 修改信息</button>
+            <button class="quick-action" data-msg="投诉">📢 投诉建议</button>
+            <button class="quick-action" data-msg="我要转人工客服">👤 转人工</button>
+            <button class="quick-action" data-msg="退换货政策是什么">❓ 政策咨询</button>
+          </div>
+
           <div class="chat-input-area">
-            <div class="input-tools" id="inputTools">
-              <span class="tool-hint">可用工具: </span>
-              <span class="tool-tag">📦 订单查询</span>
-              <span class="tool-tag">📋 工单创建</span>
-              <span class="tool-tag">↩️ 退换货申请</span>
-              <span class="tool-tag">👤 转人工</span>
-              <span class="tool-tag">🔍 知识库</span>
-            </div>
             <div class="input-wrapper">
               <textarea
                 id="chatInput"
@@ -240,6 +236,9 @@
     <section class="page page-handoff">
       <div class="page-header">
         <h2>转人工管理</h2>
+        <div class="page-actions">
+          <button class="btn-secondary" id="refreshHandoffBtn">🔄 刷新</button>
+        </div>
       </div>
 
       <div class="handoff-layout">
@@ -303,6 +302,7 @@
         <div class="page-actions">
           <button class="btn-secondary" id="refreshKnowledgeBtn">🔄 刷新</button>
           <button class="btn-secondary" id="seedDocsBtn">📥 导入示例</button>
+          <button class="btn-danger" id="clearAllDocsBtn">🗑️ 清空所有</button>
           <button class="btn-primary" id="uploadFileBtn">📤 上传文件</button>
         </div>
       </div>
@@ -502,6 +502,65 @@
     <div class="modal-footer">
       <button class="btn-secondary" id="cancelUserBtn">取消</button>
       <button class="btn-primary" id="saveUserBtn">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 工单详情弹窗 -->
+<div class="modal-overlay" id="ticketDetailModal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3>工单详情</h3>
+      <button class="modal-close" id="closeTicketDetail">✕</button>
+    </div>
+    <div class="modal-body" id="ticketDetailBody">
+    </div>
+    <div class="modal-footer">
+      <div class="form-group-inline">
+        <label>状态:</label>
+        <select id="ticketDetailStatus">
+          <option value="pending">待处理</option>
+          <option value="processing">处理中</option>
+          <option value="resolved">已解决</option>
+          <option value="closed">已关闭</option>
+        </select>
+      </div>
+      <div class="form-group-inline">
+        <label>优先级:</label>
+        <select id="ticketDetailPriority">
+          <option value="low">低</option>
+          <option value="medium">中</option>
+          <option value="high">高</option>
+          <option value="urgent">紧急</option>
+        </select>
+      </div>
+      <button class="btn-primary" id="saveTicketDetailBtn">保存修改</button>
+    </div>
+  </div>
+</div>
+
+<!-- 转人工处理弹窗 -->
+<div class="modal-overlay" id="handoffModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>处理转人工请求</h3>
+      <button class="modal-close" id="closeHandoffModal">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>分配给客服</label>
+        <select id="handoffAgentSelect">
+          <option value="">-- 选择客服 --</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>处理结果</label>
+        <textarea id="handoffResolution" rows="3" placeholder="请输入处理结果..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" id="cancelHandoffBtn">取消</button>
+      <button class="btn-primary" id="resolveHandoffBtn">标记已解决</button>
     </div>
   </div>
 </div>

@@ -13,6 +13,46 @@ from app.schemas.schemas import UserCreate, UserResponse, UserUpdate, APIRespons
 router = APIRouter(prefix="/api/v1/users", tags=["用户管理"])
 
 
+@router.post("/login", response_model=APIResponse)
+async def login(username: str, role: str = "user", db: AsyncSession = Depends(get_db)):
+    existing = await db.execute(select(User).where(User.username == username))
+    user = existing.scalar_one_or_none()
+
+    if user:
+        return APIResponse(
+            code=0,
+            message="登录成功",
+            data={
+                "id": user.id,
+                "username": user.username,
+                "nickname": user.nickname or user.username,
+                "level": user.level.value,
+                "role": role,
+            },
+        )
+
+    user = User(
+        username=username,
+        nickname=username,
+        level=UserLevel.VIP if role == "admin" else UserLevel.NORMAL,
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+
+    return APIResponse(
+        code=0,
+        message="登录成功（新用户已自动创建）",
+        data={
+            "id": user.id,
+            "username": user.username,
+            "nickname": user.nickname or user.username,
+            "level": user.level.value,
+            "role": role,
+        },
+    )
+
+
 @router.post("/", response_model=APIResponse)
 async def create_user(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
     existing = await db.execute(select(User).where(User.username == user_data.username))

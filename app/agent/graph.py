@@ -376,6 +376,11 @@ class AgentGraph:
         state.intent_confidence = intent_result.confidence
         state.needs_clarification = intent_result.needs_clarification
 
+        if intent_result.intent == IntentType.HUMAN:
+            state.need_human = True
+            if not state.human_reason:
+                state.human_reason = "用户请求转接人工客服"
+
         if intent_result.needs_clarification:
             return AgentNode.CLARIFICATION
 
@@ -597,11 +602,12 @@ class AgentGraph:
         if state.need_human and not state.reply:
             state.reply = f"非常抱歉，正在为您转接人工客服。{state.human_reason or ''}"
 
-        llm_reply = await self._generate_response_with_llm(state)
-        if llm_reply:
-            state.reply = llm_reply
-        elif not state.reply:
-            state.reply = self._get_default_reply(state.detected_intent, state.user_message)
+        if not state.reply:
+            llm_reply = await self._generate_response_with_llm(state)
+            if llm_reply:
+                state.reply = llm_reply
+            else:
+                state.reply = self._get_default_reply(state.detected_intent, state.user_message)
 
         state.messages.append({
             "role": "assistant",
@@ -626,10 +632,12 @@ class AgentGraph:
                 context=context_messages,
             )
             state.total_tokens = token_count
-            state.detected_intent = intent
+
+            if state.detected_intent not in (IntentType.HUMAN, IntentType.COMPLAINT, IntentType.QUERY_ORDER, IntentType.REFUND):
+                state.detected_intent = intent
 
             logger.info(
-                f"LLM 响应生成成功: intent={intent}, tokens={token_count}, "
+                f"LLM 响应生成成功: intent={state.detected_intent}, tokens={token_count}, "
                 f"session={state.session_id}"
             )
             return reply
@@ -834,6 +842,8 @@ class AgentGraph:
             result = await tool.execute(
                 reason=state.human_reason or "用户要求转人工",
                 priority="urgent" if state.need_human else "normal",
+                user_id=state.user_id,
+                session_id=state.session_id,
             )
             state.add_tool_call(
                 tool_name="escalate_to_human",
